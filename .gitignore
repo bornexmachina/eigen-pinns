@@ -4,3 +4,4 @@ checkpoints/
 *.pth
 *.pkl
 *.pickle
+*.pt
