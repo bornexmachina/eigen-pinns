@@ -4,7 +4,7 @@ Reserach on PINNs for eigenvalue problems
 # Physics-Informed Neural Networks for Quantum Eigenvalue Problems
 ## Links
 - https://arxiv.org/pdf/2203.00451
-- no code provided, but might be https://github.com/henry1jin
+- https://github.com/henry1jin/quantumNN
 ## Key points
 - Eigenvalue problem with Dirichlet boundary: $\mathcal{L} f(x) = \lambda f(x)$
 - Inputs:
