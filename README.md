@@ -22,6 +22,11 @@ Reserach on PINNs for eigenvalue problems
     - instead we have $f(x, \lambda) = f_b + g(x) * NN(x, \lambda)$ to enforce boundary conditions
 
 
+# Notes -> to-do
+- check whether integral over the surface will be zero
+- plot eigenfunctions
+
+
 
 
 
