@@ -23,8 +23,8 @@ Reserach on PINNs for eigenvalue problems
 
 
 # Notes -> to-do
-- check whether integral over the surface will be zero
-- plot eigenfunctions
+- check whether integral over the surface will be zero --> use 1.T @ M @ u --> worked on bunny
+- plot eigenfunctions --> way too much noise --> smoothing did not help --> need different loss
 
 
 
