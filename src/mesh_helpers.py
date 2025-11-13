@@ -1,6 +1,5 @@
-from scipy.sparse.linalg import eigsh
+import numpy as np
 from Mesh import Mesh
-import robust_laplacian
 import matplotlib.pyplot as plt
 
 
@@ -9,6 +8,13 @@ def normalize_mesh(mesh):
     std_max = mesh.verts.std(0).max() + 1e-12
     verts_normalized = (mesh.verts - centroid) / std_max
     return Mesh(verts=verts_normalized, connectivity=mesh.connectivity)
+
+
+def load_mesh(file, normalize=True):
+    mesh = Mesh(file)
+    if normalize:
+        mesh = normalize_mesh(mesh)
+    return mesh
 
 
 def visualize_mesh(mesh, title='Mesh Visualization', highlight_indices=None):
@@ -30,9 +36,3 @@ def visualize_mesh(mesh, title='Mesh Visualization', highlight_indices=None):
     ax.set_title(title)
     ax.view_init(elev=130, azim=-90)
     plt.show()
-
-
-def solve_eigenvalue_problem(X, n_modes):
-    L, M = robust_laplacian.point_cloud_laplacian(X)
-    vals, vecs = eigsh(L, k=n_modes, M=M, which='SM')
-    return vals, np.array(vecs), L, M

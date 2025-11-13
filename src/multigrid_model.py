@@ -1,12 +1,11 @@
 import os
 import numpy as np
 from scipy.linalg import eigh
-from sklearn.neighbors import NearestNeighbors
-
 import torch
 import torch.optim as optim
-
 import robust_laplacian
+from corrector_model import SimpleCorrector
+import utils
 
 
 class MultigridGNN:
@@ -54,8 +53,8 @@ class MultigridGNN:
         node_offset = 0
         for X in X_list:
             L, M = robust_laplacian.point_cloud_laplacian(X)
-            L_list.append(sp_to_torch_sparse(L).to(device))
-            M_list.append(sp_to_torch_sparse(M).to(device))
+            L_list.append(utils.scipy_sparse_to_torch_sparse(L).to(device))
+            M_list.append(utils.scipy_sparse_to_torch_sparse(M).to(device))
 
         for ep in range(epochs):
             optimizer.zero_grad()
@@ -71,7 +70,7 @@ class MultigridGNN:
                 n_nodes = U_init.shape[0]
                 U_level = U_pred[node_offset:node_offset+n_nodes]
                 
-                # === CRITICAL FIX: Normalize each eigenvector ===
+                # Normalize each eigenvector
                 Mu = torch.sparse.mm(M_t, U_level)
                 norms = torch.sqrt(torch.sum(U_level * Mu, dim=0) + 1e-12)
                 U_level_normalized = U_level / norms.unsqueeze(0)
@@ -91,7 +90,7 @@ class MultigridGNN:
                 Gram = U_level_normalized.t() @ Mu_norm
                 L_orth = torch.mean((Gram - torch.eye(n_modes, device=device))**2)
 
-                # === CRITICAL FIX: Zero-mean constraint for modes 1+ (NOT mode 0) ===
+                # Zero-mean constraint for modes 1+ (NOT mode 0)
                 # Mode 0 is constant, modes 1+ should be zero-mean
                 ones = torch.ones(n_nodes, 1, device=device)
                 if n_modes > 1:
@@ -144,8 +143,8 @@ class MultigridGNN:
     # ------------------------
     def refine_eigenvectors(self, U_pred, L, M):
         U = torch.FloatTensor(U_pred).to(self.device)
-        L_t = sp_to_torch_sparse(L).to(self.device)
-        M_t = sp_to_torch_sparse(M).to(self.device)
+        L_t = utils.scipy_sparse_to_torch_sparse(L).to(self.device)
+        M_t = utils.scipy_sparse_to_torch_sparse(M).to(self.device)
         A = (U.t() @ torch.sparse.mm(L_t, U)).cpu().numpy()
         B = (U.t() @ torch.sparse.mm(M_t, U)).cpu().numpy()
         vals, C = eigh(A, B)

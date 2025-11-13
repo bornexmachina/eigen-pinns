@@ -2,9 +2,12 @@ import numpy as np
 from scipy.sparse import coo_matrix
 from sklearn.neighbors import NearestNeighbors
 import torch
+from scipy.sparse.linalg import eigsh
+import robust_laplacian
+import matplotlib.pyplot as plt
 
 
-def sp_to_torch_sparse(A):
+def scipy_sparse_to_torch_sparse(A):
     A = A.tocoo()
     indices = np.vstack((A.row, A.col)).astype(np.int64)
     i = torch.LongTensor(indices)
@@ -47,3 +50,26 @@ def build_knn_graph(X, k=4):
             rows.append(i)
             cols.append(j)
     return torch.LongTensor([rows, cols]).to(torch.long)
+
+
+def solve_eigenvalue_problem(X, n_modes):
+    L, M = robust_laplacian.point_cloud_laplacian(X)
+    vals, vecs = eigsh(L, k=n_modes, M=M, which='SM')
+    return vals, np.array(vecs), L, M
+
+
+def post_training_diagnostics(UMU, n_modes):
+    print("\nOrthonormality check (should be Identity):")
+    print("Diagonal:", np.diag(UMU)[:10])
+    print("Off-diagonal max:", np.max(np.abs(UMU - np.eye(n_modes))))
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)
+    plt.imshow(UMU, cmap='magma', vmin=-0.1, vmax=1.1)
+    plt.colorbar()
+    plt.title('U^T M U (should be Identity)')
+    plt.subplot(1, 2, 2)
+    plt.imshow(np.abs(UMU - np.eye(n_modes)), cmap='magma')
+    plt.colorbar()
+    plt.title('|U^T M U - I|')
+    plt.show()
