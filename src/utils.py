@@ -15,7 +15,7 @@ def scipy_sparse_to_torch_sparse(A):
     return torch.sparse_coo_tensor(i, v, A.shape).coalesce()
 
 
-def normalize_columns_np(U, eps=1e-12):
+def normalize_columns_np(U, eps):
     norms = np.linalg.norm(U, axis=0) + eps
     return U / norms, norms
 
@@ -25,7 +25,7 @@ def normalize_columns_torch(U, eps=1e-12):
     return U / norms, norms
 
 
-def build_prolongation(X_coarse, X_fine, k=1):
+def build_prolongation(X_coarse, X_fine, k):
     nbrs = NearestNeighbors(n_neighbors=k, algorithm='auto').fit(X_coarse)
     distances, indices = nbrs.kneighbors(X_fine)
     n_fine, n_coarse = X_fine.shape[0], X_coarse.shape[0]
@@ -40,7 +40,7 @@ def build_prolongation(X_coarse, X_fine, k=1):
     return coo_matrix((vals, (rows, cols)), shape=(n_fine, n_coarse))
 
 
-def build_knn_graph(X, k=4):
+def build_knn_graph(X, k):
     n_points = X.shape[0]
     nbrs = NearestNeighbors(n_neighbors=k+1).fit(X)
     _, neighbors = nbrs.kneighbors(X)

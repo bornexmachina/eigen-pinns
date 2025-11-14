@@ -48,7 +48,6 @@ def main():
         print()
 
     
-
     # ------------------------
     # Level 0: exact coarse solve
     # ------------------------

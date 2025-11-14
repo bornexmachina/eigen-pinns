@@ -6,11 +6,11 @@ import torch.nn as nn
 # Simple neighbor-mean corrector
 # ------------------------
 class SimpleCorrector(nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_sizes=(128,128,128), dropout=0.0):
+    def __init__(self, in_dim, out_dim, hidden_layers, dropout):
         super().__init__()
         layers = []
         prev = in_dim * 2
-        for h in hidden_sizes:
+        for h in hidden_layers:
             layers.append(nn.Linear(prev, h))
             layers.append(nn.ReLU(inplace=True))
             if dropout > 0.0:

@@ -1,4 +1,3 @@
-import os
 import numpy as np
 from scipy.linalg import eigh
 import torch
@@ -9,19 +8,14 @@ import utils
 
 
 class MultigridGNN:
-    def __init__(self, device=None, checkpoint_dir="./checkpoints"):
-        self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+    def __init__(self):
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.model = None
-        self.checkpoint_dir = checkpoint_dir
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
 
     # ------------------------
     # Physics-informed GNN training
     # ------------------------
-    def train_multiresolution(self, X_list, U_init_list, edge_index_list,
-                            epochs=1000, lr=1e-3, corr_scale=1e-1,
-                            w_res=5.0, w_orth=10.0, w_proj=0.001,
-                            grad_clip=1.0, weight_decay=1e-6, log_every=250):
+    def train_multiresolution(self, X_list, U_init_list, edge_index_list, epochs, lr, corr_scale, w_res, w_orth, w_proj, grad_clip, weight_decay, log_every):
         device = self.device
         n_modes = U_init_list[0].shape[1]
 
