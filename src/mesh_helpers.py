@@ -1,6 +1,7 @@
 import numpy as np
-from Mesh import Mesh
+import meshio
 import matplotlib.pyplot as plt
+from Mesh import Mesh
 
 
 def normalize_mesh(mesh):
@@ -36,3 +37,16 @@ def visualize_mesh(mesh, title='Mesh Visualization', highlight_indices=None):
     ax.set_title(title)
     ax.view_init(elev=130, azim=-90)
     plt.show()
+
+
+def save_eigenfunctions(mesh, U_pred, n_modes, vtu_file):    
+    centroid = mesh.verts.mean(0)
+    std_max = mesh.verts.std(0).max()
+
+    verts_new = (mesh.verts - centroid)/std_max
+
+    m = Mesh(verts=verts_new, connectivity=mesh.connectivity)
+    cells = [('triangle', m.connectivity)]
+
+    m_out = meshio.Mesh(m.verts, cells, point_data={f'v{i}': U_pred[:, i] for i in range(0, n_modes)})
+    m_out.write(vtu_file)

@@ -15,7 +15,7 @@ class MultigridGNN:
     # ------------------------
     # Physics-informed GNN training
     # ------------------------
-    def train_multiresolution(self, X_list, U_init_list, edge_index_list, epochs, lr, corr_scale, w_res, w_orth, w_proj, grad_clip, weight_decay, log_every):
+    def train_multiresolution(self, X_list, U_init_list, edge_index_list, epochs, lr, corr_scale, w_res, w_orth, w_proj, grad_clip, weight_decay, log_every, hidden_layers, dropout):
         device = self.device
         n_modes = U_init_list[0].shape[1]
 
@@ -36,7 +36,7 @@ class MultigridGNN:
 
         in_dim = x_feats_all.shape[1]
         if self.model is None:
-            self.model = SimpleCorrector(in_dim, n_modes).to(device)
+            self.model = SimpleCorrector(in_dim, n_modes, hidden_layers, dropout).to(device)
 
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), 
                             lr=lr, weight_decay=weight_decay)

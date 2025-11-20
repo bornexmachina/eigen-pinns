@@ -1,5 +1,9 @@
 config:
-  verbose: true
+  mesh_file: "./resources/bunny.obj"
+  diagnostics_viz: "./outputs/diagnostics.png"
+  vtu_file: "./outputs/bunny_model.vtu"
+  verbose: false
+  do_extensive_visuals: false
 
 utils:
   normalization_eps: 1E-12
@@ -18,11 +22,10 @@ multigridGNN:
   weight_orthogonal: 10.0
   weight_projection: 0.001
   gradient_clipping: 1.0
-  weight_decay: 1E-6
+  weight_decay: 0.000001
   log_every: 250
 
 runner:
-  mesh_file: "bunny_obj"
   n_modes: 128
   hierarchy: [256, 512, 1024]
   k_neighbors: 4

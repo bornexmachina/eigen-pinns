@@ -58,7 +58,7 @@ def solve_eigenvalue_problem(X, n_modes):
     return vals, np.array(vecs), L, M
 
 
-def post_training_diagnostics(UMU, n_modes):
+def post_training_diagnostics(UMU, n_modes, output_file):
     print("\nOrthonormality check (should be Identity):")
     print("Diagonal:", np.diag(UMU)[:10])
     print("Off-diagonal max:", np.max(np.abs(UMU - np.eye(n_modes))))
@@ -72,4 +72,4 @@ def post_training_diagnostics(UMU, n_modes):
     plt.imshow(np.abs(UMU - np.eye(n_modes)), cmap='magma')
     plt.colorbar()
     plt.title('|U^T M U - I|')
-    plt.show()
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')

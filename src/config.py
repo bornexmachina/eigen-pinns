@@ -4,7 +4,8 @@ import yaml
 class PINNConfig:
     def __init__(self, mesh_file, n_modes, hierarchy, k_neighbors, epochs, learning_rate, corrector_scale,
                  weight_residual, weight_orthogonal, weight_projection, gradient_clipping, weight_decay, log_every,
-                 hidden_layers, dropout, normalization_eps, prolongation_neighbors, knn_graph_neighbors, verbose):
+                 hidden_layers, dropout, normalization_eps, prolongation_neighbors, knn_graph_neighbors,
+                 verbose, do_extensive_visuals, diagnostics_viz, vtu_file):
         self.mesh_file = mesh_file
         self.n_modes = n_modes
         self.hierarchy = hierarchy
@@ -24,10 +25,17 @@ class PINNConfig:
         self.prolongation_neighbors = prolongation_neighbors
         self.knn_graph_neighbors = knn_graph_neighbors
         self.verbose = verbose
+        self.do_extensive_visuals = do_extensive_visuals
+        self.diagnostics_viz = diagnostics_viz
+        self.vtu_file = vtu_file
 
     @classmethod
-    def from_yaml(cls, file):
+    def from_yaml(cls, file='./src/parameters.yml'):
         with open(file, "r") as f:
             parameters = yaml.safe_load(f)
 
-        return cls(**parameters)
+        merged_parameters = {}
+        for section in parameters.values():
+            merged_parameters.update(section)
+
+        return cls(**merged_parameters)
