@@ -15,17 +15,17 @@ correctorGNN:
   dropout: 0.0
 
 multigridGNN:
-  epochs: 5000
+  epochs: 10000
   learning_rate: 0.001
-  corrector_scale: 0.01
+  corrector_scale: 1
   weight_residual: 5.0
   weight_orthogonal: 10.0
   weight_projection: 0.001
   gradient_clipping: 1.0
-  weight_decay: 0.000001
+  weight_decay: 0.00001
   log_every: 250
 
 runner:
-  n_modes: 128
+  n_modes: 50
   hierarchy: [256, 512, 1024]
   k_neighbors: 4
