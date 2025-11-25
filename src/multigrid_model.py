@@ -15,7 +15,7 @@ class MultigridGNN:
     # ------------------------
     # Physics-informed GNN training
     # ------------------------
-    def train_multiresolution(self, X_list, U_init_list, edge_index_list, epochs, lr, corr_scale, w_res, w_orth, w_proj, grad_clip, weight_decay, log_every, hidden_layers, dropout):
+    def train_multiresolution(self, X_list, L_list, M_list, U_init_list, edge_index_list, epochs, lr, corr_scale, w_res, w_orth, w_proj, grad_clip, weight_decay, log_every, hidden_layers, dropout):
         device = self.device
         n_modes = U_init_list[0].shape[1]
 
@@ -40,15 +40,12 @@ class MultigridGNN:
 
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), 
                             lr=lr, weight_decay=weight_decay)
+        
         self.model.train()
 
         # Precompute Laplacians per level
-        L_list, M_list = [], []
-        node_offset = 0
-        for X in X_list:
-            L, M = robust_laplacian.point_cloud_laplacian(X)
-            L_list.append(utils.scipy_sparse_to_torch_sparse(L).to(device))
-            M_list.append(utils.scipy_sparse_to_torch_sparse(M).to(device))
+        L_list = [utils.scipy_sparse_to_torch_sparse(L).to(device) for L in L_list]
+        M_list = [utils.scipy_sparse_to_torch_sparse(M).to(device) for M in M_list]
 
         for ep in range(epochs):
             optimizer.zero_grad()

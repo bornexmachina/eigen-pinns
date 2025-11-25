@@ -1,6 +1,7 @@
 import numpy as np
 import meshio
 import matplotlib.pyplot as plt
+from scipy.sparse import coo_matrix
 from Mesh import Mesh
 
 
@@ -50,3 +51,8 @@ def save_eigenfunctions(mesh, U_pred, n_modes, vtu_file):
 
     m_out = meshio.Mesh(m.verts, cells, point_data={f'v{i}': U_pred[:, i] for i in range(0, n_modes)})
     m_out.write(vtu_file)
+
+
+def compute_stiffness_and_mass_matrices(mesh):
+    K, M = mesh.computeLaplacian()
+    return coo_matrix(K), coo_matrix(M)

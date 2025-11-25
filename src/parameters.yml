@@ -1,5 +1,6 @@
 config:
   mesh_file: "./resources/bunny.obj"
+  coarse_mesh_files: ["./resources/coarse_1.obj", "./resources/coarse_2.obj", "./resources/coarse_3.obj"]
   diagnostics_viz: "./outputs/diagnostics.png"
   vtu_file: "./outputs/bunny_model.vtu"
   verbose: false
@@ -7,15 +8,15 @@ config:
 
 utils:
   normalization_eps: 1E-12
-  prolongation_neighbors: 1
-  knn_graph_neighbors: 4
+  prolongation_neighbors: 3
+  knn_graph_neighbors: 9
 
 correctorGNN:
   hidden_layers: [128, 128, 128]
   dropout: 0.0
 
 multigridGNN:
-  epochs: 10000
+  epochs: 5000
   learning_rate: 0.001
   corrector_scale: 1
   weight_residual: 5.0
@@ -26,6 +27,6 @@ multigridGNN:
   log_every: 250
 
 runner:
-  n_modes: 50
+  n_modes: 128
   hierarchy: [256, 512, 1024]
   k_neighbors: 4

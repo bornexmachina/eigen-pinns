@@ -5,6 +5,7 @@ import torch
 from scipy.sparse.linalg import eigsh
 import robust_laplacian
 import matplotlib.pyplot as plt
+from mesh_helpers import compute_stiffness_and_mass_matrices
 
 
 def scipy_sparse_to_torch_sparse(A):
@@ -52,10 +53,16 @@ def build_knn_graph(X, k):
     return torch.LongTensor([rows, cols]).to(torch.long)
 
 
-def solve_eigenvalue_problem(X, n_modes):
+def solve_eigenvalue_point_cloud(X, n_modes):
     L, M = robust_laplacian.point_cloud_laplacian(X)
     vals, vecs = eigsh(L, k=n_modes, M=M, which='SM')
     return vals, np.array(vecs), L, M
+
+
+def solve_eigenvalue_mesh(mesh, n_modes):
+    K, M = compute_stiffness_and_mass_matrices(mesh)
+    vals, vecs = eigsh(K, k=n_modes, M=M, which='SM')
+    return vals, np.array(vecs), K, M
 
 
 def post_training_diagnostics(UMU, n_modes, output_file):
