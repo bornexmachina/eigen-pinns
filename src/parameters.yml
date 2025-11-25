@@ -9,7 +9,7 @@ config:
 utils:
   normalization_eps: 1E-12
   prolongation_neighbors: 3
-  knn_graph_neighbors: 9
+  knn_graph_neighbors: 3
 
 correctorGNN:
   hidden_layers: [128, 128, 128]
@@ -19,7 +19,7 @@ multigridGNN:
   epochs: 5000
   learning_rate: 0.001
   corrector_scale: 1
-  weight_residual: 5.0
+  weight_residual: 0.1
   weight_orthogonal: 10.0
   weight_projection: 0.001
   gradient_clipping: 1.0
