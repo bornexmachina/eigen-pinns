@@ -5,6 +5,8 @@ import torch
 from scipy.sparse.linalg import eigsh
 import robust_laplacian
 import matplotlib.pyplot as plt
+from scipy.optimize import linear_sum_assignment
+from scipy.linalg import svd, norm
 
 
 def scipy_sparse_to_torch_sparse(A):
@@ -73,3 +75,239 @@ def post_training_diagnostics(UMU, n_modes, output_file):
     plt.colorbar()
     plt.title('|U^T M U - I|')
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
+
+
+
+# ----------------------------------------------------------------------
+# 1. Permutation + Sign Alignment (Used for mode-by-mode error tracking)
+# ----------------------------------------------------------------------
+
+def align_eigenvectors(U_pred, U_exact, M=None):
+    """
+    Align predicted eigenvectors to exact eigenvectors using Hungarian algorithm
+    for permutation and sign flip.
+    
+    Args:
+        U_pred: (n, k) predicted eigenvectors (columns are modes)
+        U_exact: (n, k) exact eigenvectors (columns are modes)
+        M: optional mass matrix for M-orthogonality
+        
+    Returns:
+        U_aligned_ps: (n, k) permutation/sign aligned eigenvectors
+        permutation: best permutation found (index in U_pred corresponding to U_exact order)
+        signs: best signs found
+    """
+    n_modes = U_pred.shape[1]
+    
+    # Compute overlap matrix W = U_pred^T M U_exact
+    if M is not None:
+        overlap_pos = U_pred.T @ M @ U_exact
+    else:
+        overlap_pos = U_pred.T @ U_exact
+    
+    overlap_abs = np.abs(overlap_pos)
+    
+    # Hungarian algorithm: Maximize overlap <==> Minimize negative overlap
+    # row_ind gives the column index in U_pred (source), col_ind in U_exact (target)
+    row_ind, col_ind = linear_sum_assignment(-overlap_abs)
+    
+    # Apply permutation to predicted modes
+    # U_aligned_ps[:, i] = U_pred[:, row_ind[i]]
+    U_aligned_ps = U_pred[:, row_ind].copy()
+    
+    # Signs are determined from the overlap of the permuted pair
+    signs = np.sign(overlap_pos[row_ind, col_ind])
+    signs[signs == 0] = 1  # Handle near-zero overlaps
+    
+    # Apply sign flip
+    U_aligned_ps = U_aligned_ps * signs
+    
+    # The permutation maps the original column index of U_exact (i) to the
+    # column index of U_pred (row_ind[i]).
+    return U_aligned_ps, row_ind, signs
+
+
+# ----------------------------------------------------------------------
+# 2. Subspace Alignment (Orthogonal Procrustes Analysis via SVD)
+# ----------------------------------------------------------------------
+
+def get_subspace_error_and_alignment(U_pred, U_exact, M=None):
+    """
+    Finds the optimal orthogonal rotation R to align U_pred to U_exact using 
+    Orthogonal Procrustes Analysis. This minimizes the subspace error,
+    correcting for rotation, permutation, and sign-flip simultaneously.
+    
+    Args:
+        U_pred: (n, k) predicted eigenvectors
+        U_exact: (n, k) exact eigenvectors
+        M: optional mass matrix for M-orthogonality
+        
+    Returns:
+        U_aligned_procrustes: (n, k) U_pred @ R_optimal
+        subspace_error: Frobenius norm of the difference || U_aligned_procrustes - U_exact ||_F
+    """
+    # 1. Compute the overlap matrix W = U_pred^T M U_exact
+    if M is not None:
+        W = U_pred.T @ M @ U_exact
+    else:
+        W = U_pred.T @ U_exact
+
+    # 2. Perform SVD on the overlap matrix W = V * Sigma * D^T
+    V, _, D_T = svd(W)
+    
+    # 3. Compute the optimal orthogonal rotation matrix R = V @ D^T
+    R_optimal = V @ D_T
+
+    # 4. Apply the optimal rotation
+    U_aligned_procrustes = U_pred @ R_optimal
+    
+    # 5. Calculate the subspace error
+    subspace_error = norm(U_aligned_procrustes - U_exact, 'fro')
+    
+    return U_aligned_procrustes, subspace_error
+
+
+# ----------------------------------------------------------------------
+# 3. Comprehensive Diagnostics (The main function with improvements)
+# ----------------------------------------------------------------------
+
+def comprehensive_diagnostics(U_pred, U_exact, X, config):
+    """
+    Comprehensive diagnostics for comparing predicted and exact eigenvectors,
+    including both permutation/sign alignment (for mode-by-mode tracking)
+    and Orthogonal Procrustes alignment (for best-case subspace error).
+    """
+    print("\n" + "="*80)
+    print("COMPREHENSIVE EIGENMODE DIAGNOSTICS (SVD-ROBUST)")
+    print("="*80)
+    
+    # --- 0. Setup: Compute Laplacian and Mass matrix ---
+    L, M = robust_laplacian.point_cloud_laplacian(X)
+
+
+    # --- 1. Compute Eigenvalues via Rayleigh Quotient ---
+    def compute_rayleigh_quotient(U, L, M):
+        lambda_list = []
+        for i in range(U.shape[1]):
+            u = U[:, i]
+            # Rayleigh Quotient: lambda = (u^T L u) / (u^T M u)
+            Lu = L @ u
+            Mu = M @ u
+            lambda_i = (u.T @ Lu) / (u.T @ Mu + 1e-12) 
+            lambda_list.append(lambda_i)
+        return np.array(lambda_list)
+
+    lambda_pred = compute_rayleigh_quotient(U_pred, L, M)
+    lambda_exact = compute_rayleigh_quotient(U_exact, L, M)
+    
+    # --- 2. Alignment for Mode-by-Mode Tracking (Permutation + Sign) ---
+    U_aligned_ps, permutation, signs = align_eigenvectors(U_pred, U_exact, M)
+    lambda_pred_ordered = lambda_pred[permutation]
+    
+    # --- 3. Alignment for Subspace Error (Procrustes Analysis) ---
+    U_aligned_procrustes, subspace_error = get_subspace_error_and_alignment(U_pred, U_exact, M)
+    
+    
+    # =================================================================
+    #   DIAGNOSTIC OUTPUT
+    # =================================================================
+    
+    # --- 1. EIGENVALUE COMPARISON (using Permutation-aligned modes) ---
+    print("\n1. EIGENVALUE COMPARISON (Permutation-Aligned)")
+    print("-" * 80)
+    print(f"{'Mode':<6} {'λ_exact':<12} {'λ_pred (aligned)':<18} {'Rel Error':<12}")
+    print("-" * 80)
+    
+    for i in range(min(10, len(lambda_exact))):
+        lambda_exact_i = lambda_exact[i]
+        lambda_aligned_i = lambda_pred_ordered[i] 
+        rel_error = abs(lambda_aligned_i - lambda_exact_i) / (abs(lambda_exact_i) + 1e-12)
+        
+        print(f"{i:<6} {lambda_exact_i:<12.6f} "
+              f"{lambda_aligned_i:<18.6f} {rel_error:<12.6f}")
+
+    # --- 2. EIGENVECTOR ALIGNMENT (Mode-by-Mode using Permutation/Sign) ---
+    print("\n2. EIGENVECTOR ALIGNMENT (Mode-by-Mode Permutation/Sign)")
+    print("-" * 80)
+    print(f"{'Mode':<6} {'Permutation':<12} {'Sign':<6} {'Cosine Sim':<12} {'L2 Error (PS)':<14}")
+    print("-" * 80)
+    
+    for i in range(min(10, U_exact.shape[1])):
+        perm_i = permutation[i] # U_pred[:, perm_i] aligns to U_exact[:, i]
+        sign_i = signs[i]
+        
+        u_aligned = U_aligned_ps[:, i]
+        u_exact = U_exact[:, i]
+        
+        # M-normalized Cosine similarity
+        inner_prod = u_aligned.T @ M @ u_exact
+        norm_u_aligned_sq = u_aligned.T @ M @ u_aligned
+        norm_u_exact_sq = u_exact.T @ M @ u_exact
+        
+        cos_sim = abs(inner_prod) / (np.sqrt(norm_u_aligned_sq * norm_u_exact_sq) + 1e-12)
+        
+        # L2 error (standard Euclidean norm) for Permutation/Sign alignment
+        l2_error_ps = norm(u_aligned - u_exact)
+        
+        print(f"{i:<6} {i}->{perm_i:<9} {sign_i:>4.0f}    {cos_sim:<12.6f} {l2_error_ps:<14.6f}")
+
+    # --- 3. SUBSPACE ALIGNMENT (Procrustes Analysis) ---
+    print("\n3. SUBSPACE ALIGNMENT (Procrustes Analysis - Most Robust Check)")
+    print("-" * 80)
+    print(f"Subspace Error (Frobenius Norm, ||U_aligned_proc - U_exact||_F): {subspace_error:.6e}")
+    print("Lower value indicates better alignment of the entire k-dimensional eigenspace.")
+    print("-" * 80)
+
+    # --- 4. ORTHONORMALITY CHECKS ---
+    print("\n4. ORTHONORMALITY CHECK (Predicted)")
+    print("-" * 80)
+    UMU_pred = U_pred.T @ M @ U_pred
+    diag_pred = np.diag(UMU_pred)
+    off_diag_max_pred = np.max(np.abs(UMU_pred - np.diag(diag_pred)))
+    print(f"Diagonal (should be ~1.0): {diag_pred[:10]}")
+    print(f"Max off-diagonal: {off_diag_max_pred:.6e}")
+    
+    # --- 5. VISUALIZATIONS ---
+    if config.diagnostics_viz:
+        try:
+            fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+            
+            # Plot 1: Eigenvalue comparison
+            axes[0, 0].plot(lambda_exact[:20], 'o-', label='Exact', markersize=8)
+            axes[0, 0].plot(lambda_pred[:20], 's-', label='Predicted (Original Order)', markersize=6, alpha=0.7)
+            axes[0, 0].plot(lambda_pred_ordered[:20], 'x-', label='Predicted (Permutation Aligned)', markersize=6, alpha=0.9)
+            axes[0, 0].set_xlabel('Mode Index')
+            axes[0, 0].set_ylabel('Eigenvalue')
+            axes[0, 0].set_title('Eigenvalue Comparison')
+            axes[0, 0].legend()
+            axes[0, 0].grid(True, alpha=0.3)
+            
+            # Plot 2: Eigenvalue errors
+            rel_errors = np.abs(lambda_pred_ordered - lambda_exact) / (np.abs(lambda_exact) + 1e-12)
+            axes[0, 1].semilogy(rel_errors[:20], 'o-')
+            axes[0, 1].set_xlabel('Mode Index')
+            axes[0, 1].set_ylabel('Relative Error')
+            axes[0, 1].set_title('Eigenvalue Relative Errors (Permutation Aligned)')
+            axes[0, 1].grid(True, alpha=0.3)
+            
+            # Plot 3: Gram matrix (predicted) - Orthonormality check
+            im1 = axes[1, 0].imshow(np.abs(UMU_pred), cmap='magma', vmin=0, vmax=1.1)
+            axes[1, 0].set_title('|U^T M U| - Predicted (Orthonormality)')
+            plt.colorbar(im1, ax=axes[1, 0])
+            
+            # Plot 4: Procrustes Aligned Overlap - Subspace quality check
+            # This shows the maximal overlap possible after optimal rotation
+            U_overlap_proc = U_aligned_procrustes.T @ M @ U_exact
+            im2 = axes[1, 1].imshow(np.abs(U_overlap_proc), cmap='magma', vmin=0, vmax=1.1)
+            axes[1, 1].set_title('|U_aligned_proc^T M U_exact| (Subspace Overlap)')
+            plt.colorbar(im2, ax=axes[1, 1])
+            
+            plt.tight_layout()
+            save_path = config.diagnostics_viz.replace('.png', '_comprehensive_v2.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"\nDiagnostic plots saved to: {save_path}")
+            
+        except Exception as e:
+            print(f"\nVisualization Error: Could not generate plots. Ensure dependencies are installed. Error: {e}")
+            
+    print("\n" + "="*80)
