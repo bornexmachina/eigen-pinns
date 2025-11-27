@@ -114,6 +114,10 @@ def main():
     utils.post_training_diagnostics(UMU, config.n_modes, config.diagnostics_viz)
     mesh_helpers.save_eigenfunctions(mesh, U_pred, config.n_modes, config.vtu_file)
 
+    lambda_exact, U_exact, _, _ = utils.solve_eigenvalue_mesh(mesh, config.n_modes)
+
+    utils.comprehensive_diagnostics(U_pred, U_exact, X_full, config)
+
     return U_pred
 
 

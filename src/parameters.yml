@@ -6,22 +6,23 @@ config:
   verbose: false
   do_extensive_visuals: false
 
+
 utils:
-  normalization_eps: 1E-12
+  normalization_eps: 1E-8
   prolongation_neighbors: 3
   knn_graph_neighbors: 3
 
 correctorGNN:
-  hidden_layers: [128, 256, 128]
+  hidden_layers: [128, 128, 128, 128]
   dropout: 0.0
 
 multigridGNN:
-  epochs: 5000
-  learning_rate: 0.001
-  corrector_scale: 1
-  weight_residual: 0.1
-  weight_orthogonal: 10.0
-  weight_projection: 0.001
+  epochs: 10000
+  learning_rate: 0.0001
+  corrector_scale: 0.1
+  weight_residual: 5.0
+  weight_orthogonal: 5.0
+  weight_projection: 0.1
   gradient_clipping: 1.0
   weight_decay: 0.00001
   log_every: 250
