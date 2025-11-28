@@ -127,6 +127,41 @@ def align_eigenvectors(U_pred, U_exact, M=None):
     return U_aligned_ps, row_ind, signs
 
 
+def orthonormalize(U, M):
+    """
+    Gram-Schmidt orthonormalization of U with respect to mass matrix M.
+    U: (N, k) numpy array
+    M: (N, N) scipy sparse matrix
+    """
+    n_modes = U.shape[1]
+    U_orth = np.zeros_like(U)
+
+    for i in range(n_modes):
+        v = U[:, i].copy()
+        # Project out previous modes
+        for j in range(i):
+            u_j = U_orth[:, j]
+            # overlap = <u_j, v>_M = u_j.T @ M @ v
+            overlap = u_j.T @ M @ v
+            v -= overlap * u_j
+
+        # Normalize
+        norm_v = np.sqrt(v.T @ M @ v)
+        U_orth[:, i] = v / (norm_v + 1e-12)
+
+    return U_orth
+
+
+def jacobi_smooth(M, L, U_rough, alpha=0.05, n_iters=5):
+    """Cheap iterative smoothing instead of direct solve"""
+    U = U_rough.copy()
+    D_inv = 1.0 / (M.diagonal() + alpha * L.diagonal() + 1e-12)
+
+    for _ in range(n_iters):
+        residual = M @ U_rough - (M + alpha * L) @ U
+        U += D_inv[:, None] * residual
+
+    return U
 # ----------------------------------------------------------------------
 # 2. Subspace Alignment (Orthogonal Procrustes Analysis via SVD)
 # ----------------------------------------------------------------------

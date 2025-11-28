@@ -7,6 +7,7 @@ Physics-informed Multigrid + GNN eigen-refinement
 """
 
 import numpy as np
+from scipy.sparse.linalg import spsolve
 import robust_laplacian
 import utils
 import mesh_helpers
@@ -49,6 +50,7 @@ def main():
     X0 = X_full[idx0]
     print(f"\nLEVEL 0: exact solve on {X0.shape[0]} points...")
     lambda0, U0, L0, M0 = utils.solve_eigenvalue_problem(X0, config.n_modes)
+
     if config.verbose:
         print("Coarse eigenvalues:", np.round(lambda0,6))
 
@@ -64,7 +66,34 @@ def main():
         Xf = X_full[idx_fine]
 
         P = utils.build_prolongation(Xc, Xf, k=config.prolongation_neighbors)
-        U_init = P @ U_prev
+        U_init_rough = P @ U_prev
+
+        # --- SMOOTHING STEP ---
+        # Prolongation introduces high-freq noise that looks like high eigenvalues.
+        # We smooth it using implicit diffusion: (M + alpha*L) u = M u_rough
+        print(f"  Level {level}: Prolongation & Smoothing...")
+        L_fine, M_fine = robust_laplacian.point_cloud_laplacian(Xf)
+        alpha = 0.01  # Smoothing strength (0.01 is usually good for point clouds)
+
+        # Solve linear system for smoother U
+        # Compute cost estimate
+        if Xf.shape[0] < 5000:
+            # Small enough for direct solve
+            L_fine, M_fine = robust_laplacian.point_cloud_laplacian(Xf)
+            A_smooth = M_fine + alpha * L_fine
+            B_smooth = M_fine @ U_init_rough
+            U_init = spsolve(A_smooth, B_smooth)
+        else:
+            # Too large - use cheap Jacobi smoothing or skip
+            L_fine, M_fine = robust_laplacian.point_cloud_laplacian(Xf)
+            U_init = utils.jacobi_smooth(M_fine, L_fine, U_init_rough, alpha=0.05, n_iters=5)
+
+        # Normalize again just in case
+        # (Optional, but good practice as smoothing can dampen amplitude)
+        # norm = np.sqrt(np.diag(U_init.T @ M_fine @ U_init))
+        # U_init = U_init / norm
+        # ----------------------
+
         edge_index = utils.build_knn_graph(Xf, k=config.k_neighbors)
 
         X_list.append(Xf)
@@ -78,9 +107,9 @@ def main():
     # ------------------------
     print("\nTraining physics-informed multiresolution GNN...")
     solver = MultigridGNN()
-    U_pred_all = solver.train_multiresolution(X_list, U_init_list, edge_index_list, 
+    U_pred_all = solver.train_multiresolution(X_list, U_init_list, edge_index_list, lambda0,
                                               epochs=config.epochs, lr=config.learning_rate, corr_scale=config.corrector_scale,
-                                              w_res=config.weight_residual, w_orth=config.weight_orthogonal, w_proj=config.weight_projection,
+                                              w_res=config.weight_residual, w_orth=config.weight_orthogonal, w_proj=config.weight_projection, w_trace=config.weight_trace, w_order=config.w_order, w_eigen=config.w_eigen,
                                               grad_clip=config.gradient_clipping, weight_decay=config.weight_decay, log_every=config.log_every,
                                               hidden_layers=config.hidden_layers, dropout=config.dropout)
 

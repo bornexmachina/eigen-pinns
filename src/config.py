@@ -3,7 +3,7 @@ import yaml
 
 class PINNConfig:
     def __init__(self, mesh_file, n_modes, hierarchy, k_neighbors, epochs, learning_rate, corrector_scale,
-                 weight_residual, weight_orthogonal, weight_projection, gradient_clipping, weight_decay, log_every,
+                 weight_residual, weight_orthogonal, weight_projection, weight_trace, w_order, w_eigen, gradient_clipping, weight_decay, log_every,
                  hidden_layers, dropout, normalization_eps, prolongation_neighbors, knn_graph_neighbors,
                  verbose, do_extensive_visuals, diagnostics_viz, vtu_file):
         self.mesh_file = mesh_file
@@ -16,6 +16,9 @@ class PINNConfig:
         self.weight_residual = weight_residual
         self.weight_orthogonal = weight_orthogonal
         self.weight_projection = weight_projection
+        self.weight_trace = weight_trace
+        self.w_order = w_order
+        self.w_eigen = w_eigen
         self.gradient_clipping = gradient_clipping
         self.weight_decay = weight_decay
         self.log_every = log_every

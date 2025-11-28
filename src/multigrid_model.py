@@ -15,7 +15,7 @@ class MultigridGNN:
     # ------------------------
     # Physics-informed GNN training
     # ------------------------
-    def train_multiresolution(self, X_list, U_init_list, edge_index_list, epochs, lr, corr_scale, w_res, w_orth, w_proj, grad_clip, weight_decay, log_every, hidden_layers, dropout):
+    def train_multiresolution(self, X_list, U_init_list, edge_index_list, lambda_coarse, epochs, lr, corr_scale, w_res, w_orth, w_proj, w_trace, w_order, w_eigen, grad_clip, weight_decay, log_every, hidden_layers, dropout):
         device = self.device
         n_modes = U_init_list[0].shape[1]
 
@@ -50,6 +50,9 @@ class MultigridGNN:
             L_list.append(utils.scipy_sparse_to_torch_sparse(L).to(device))
             M_list.append(utils.scipy_sparse_to_torch_sparse(M).to(device))
 
+        if lambda_coarse is not None:
+            lambda_target = torch.FloatTensor(lambda_coarse).to(device)
+
         for ep in range(epochs):
             optimizer.zero_grad()
             corr_raw = self.model(x_feats_all, edge_index_all)
@@ -74,15 +77,17 @@ class MultigridGNN:
                 Lu_norm = torch.sparse.mm(L_t, U_level_normalized)
 
                 # Rayleigh residual
-                num = torch.sum(U_level_normalized * Lu_norm, dim=0)
-                den = torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12
-                lambdas = num / den
+                #num = torch.sum(U_level_normalized * Lu_norm, dim=0)
+                #den = torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12
+                #lambdas = num / den
+                lambdas = torch.sum(U_level_normalized * Lu_norm, dim=0) / (torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12)
                 res = Lu_norm - Mu_norm * lambdas.unsqueeze(0)
                 L_res = torch.mean(res**2)
                 
                 # Orthonormality (should be near-perfect with normalization)
                 Gram = U_level_normalized.t() @ Mu_norm
-                L_orth = torch.mean((Gram - torch.eye(n_modes, device=device))**2)
+                # L_orth = torch.mean((Gram - torch.eye(n_modes, device=device))**2)
+                L_orth = torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes
 
                 # Zero-mean constraint for modes 1+ (NOT mode 0)
                 # Mode 0 is constant, modes 1+ should be zero-mean
@@ -94,7 +99,18 @@ class MultigridGNN:
                 else:
                     L_mean = torch.tensor(0.0, device=device)
 
-                loss += w_res * L_res + w_orth * L_orth + w_proj * L_mean
+                # Trace minimalization to force smaller modes
+                L_trace = torch.mean(lambdas)
+
+                lambda_diffs = lambdas[1:] - lambdas[:-1]
+                L_order = torch.sum(torch.relu(-lambda_diffs))
+
+                if i == 0 and lambda_coarse is not None:
+                    L_eigen = torch.mean((lambdas - lambda_target)**2)
+                else:
+                    L_eigen = torch.tensor(0.0, device=device)
+
+                loss += w_res * L_res + w_orth * L_orth + w_proj * L_mean + w_trace * L_trace + w_order * L_order + w_eigen * L_eigen
                 node_offset += n_nodes
 
             loss.backward()
@@ -106,7 +122,14 @@ class MultigridGNN:
             if ep % log_every == 0 or ep == epochs-1:
                 print(f"Epoch {ep:4d}: Loss={loss.item():.6f} | "
                     f"Res={L_res.item():.6f} | Orth={L_orth.item():.6f} | "
-                    f"Mean={L_mean.item():.6f}")
+                    f"Mean={L_mean.item():.6f} | Trace={L_trace.item():.6f} | "
+                    f"Order={L_order.item():.6f} | Eigen={L_eigen.item():.6f}")
+
+                print(f"Epoch {ep:4d}: Loss={loss.item():.6f} | "
+                      f"Res={(w_res * L_res).item():.6f} | Orth={(w_orth * L_orth).item():.6f} | "
+                      f"Mean={(w_proj * L_mean).item():.6f} | Trace={(w_trace * L_trace).item():.6f} | "
+                      f"Order={(w_order * L_order).item():.6f} | Eigen={(w_eigen * L_eigen).item():.6f}")
+                print("--------------")
 
         # === POST-TRAINING: Final normalization ===
         with torch.no_grad():
