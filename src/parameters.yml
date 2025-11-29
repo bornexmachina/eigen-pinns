@@ -15,7 +15,7 @@ correctorGNN:
   dropout: 0.0
 
 multigridGNN:
-  epochs: 20000
+  epochs: 10000
   learning_rate: 0.001
   corrector_scale: 1.0
   weight_residual: 1000.0

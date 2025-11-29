@@ -61,6 +61,12 @@ class MultigridGNN:
 
             # Physics-informed loss
             loss = 0.0
+            loss_residual = 0.0
+            loss_orthogonal = 0.0
+            loss_surface_integral = 0.0
+            loss_trace = 0.0
+            loss_eigenvalue_order = 0.0
+            loss_coarse_eigenvalues = 0.0
             node_offset = 0
             
             for i, (L_t, M_t, U_init) in enumerate(zip(L_list, M_list, U_init_list)):
@@ -82,12 +88,12 @@ class MultigridGNN:
                 #lambdas = num / den
                 lambdas = torch.sum(U_level_normalized * Lu_norm, dim=0) / (torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12)
                 res = Lu_norm - Mu_norm * lambdas.unsqueeze(0)
-                L_res = torch.mean(res**2)
+                loss_residual += torch.mean(res**2)
                 
                 # Orthonormality (should be near-perfect with normalization)
                 Gram = U_level_normalized.t() @ Mu_norm
                 # L_orth = torch.mean((Gram - torch.eye(n_modes, device=device))**2)
-                L_orth = torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes
+                loss_orthogonal += torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes
 
                 # Zero-mean constraint for modes 1+ (NOT mode 0)
                 # Mode 0 is constant, modes 1+ should be zero-mean
@@ -95,24 +101,25 @@ class MultigridGNN:
                 if n_modes > 1:
                     # Project out constant component from modes 1 onwards
                     mean_constraint = ones.t() @ Mu_norm[:, 1:]  # Shape: (1, n_modes-1)
-                    L_mean = torch.mean(mean_constraint**2)
+                    loss_surface_integral += torch.mean(mean_constraint**2)
                 else:
-                    L_mean = torch.tensor(0.0, device=device)
+                    loss_surface_integral += torch.tensor(0.0, device=device)
 
                 # Trace minimalization to force smaller modes
-                L_trace = torch.mean(lambdas)
+                loss_trace += torch.mean(lambdas)
 
                 lambda_diffs = lambdas[1:] - lambdas[:-1]
-                L_order = torch.sum(torch.relu(-lambda_diffs))
+                loss_eigenvalue_order += torch.sum(torch.relu(-lambda_diffs))
 
                 if i == 0 and lambda_coarse is not None:
-                    L_eigen = torch.mean((lambdas - lambda_target)**2)
+                    loss_coarse_eigenvalues += torch.mean((lambdas - lambda_target)**2)
                 else:
-                    L_eigen = torch.tensor(0.0, device=device)
+                    loss_coarse_eigenvalues += torch.tensor(0.0, device=device)
 
-                loss += w_res * L_res + w_orth * L_orth + w_proj * L_mean + w_trace * L_trace + w_order * L_order + w_eigen * L_eigen
+                #loss += w_res * L_res + w_orth * L_orth + w_proj * L_mean + w_trace * L_trace + w_order * L_order + w_eigen * L_eigen
                 node_offset += n_nodes
 
+            loss = w_res * loss_residual + w_orth * loss_orthogonal + w_proj * loss_surface_integral + w_trace * loss_trace + w_order * loss_eigenvalue_order + w_eigen * loss_coarse_eigenvalues
             loss.backward()
             if grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(filter(lambda p: p.requires_grad, 
@@ -121,15 +128,9 @@ class MultigridGNN:
 
             if ep % log_every == 0 or ep == epochs-1:
                 print(f"Epoch {ep:4d}: Loss={loss.item():.6f} | "
-                    f"Res={L_res.item():.6f} | Orth={L_orth.item():.6f} | "
-                    f"Mean={L_mean.item():.6f} | Trace={L_trace.item():.6f} | "
-                    f"Order={L_order.item():.6f} | Eigen={L_eigen.item():.6f}")
-
-                print(f"Epoch {ep:4d}: Loss={loss.item():.6f} | "
-                      f"Res={(w_res * L_res).item():.6f} | Orth={(w_orth * L_orth).item():.6f} | "
-                      f"Mean={(w_proj * L_mean).item():.6f} | Trace={(w_trace * L_trace).item():.6f} | "
-                      f"Order={(w_order * L_order).item():.6f} | Eigen={(w_eigen * L_eigen).item():.6f}")
-                print("--------------")
+                      f"Res={(w_res * loss_residual).item():.6f} | Orth={(w_orth * loss_orthogonal).item():.6f} | "
+                      f"Mean={(w_proj * loss_surface_integral).item():.6f} | Trace={(w_trace * loss_trace).item():.6f} | "
+                      f"Order={(w_order * loss_eigenvalue_order).item():.6f} | Eigen={(w_eigen * loss_coarse_eigenvalues).item():.6f}")
 
         # === POST-TRAINING: Final normalization ===
         with torch.no_grad():

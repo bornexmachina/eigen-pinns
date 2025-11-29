@@ -253,7 +253,7 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     print(f"{'Mode':<6} {'λ_exact':<12} {'λ_pred (aligned)':<18} {'Rel Error':<12}")
     print("-" * 80)
     
-    for i in range(min(10, len(lambda_exact))):
+    for i in range(min(64, len(lambda_exact))):
         lambda_exact_i = lambda_exact[i]
         lambda_aligned_i = lambda_pred_ordered[i] 
         rel_error = abs(lambda_aligned_i - lambda_exact_i) / (abs(lambda_exact_i) + 1e-12)
@@ -267,7 +267,7 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     print(f"{'Mode':<6} {'Permutation':<12} {'Sign':<6} {'Cosine Sim':<12} {'L2 Error (PS)':<14}")
     print("-" * 80)
     
-    for i in range(min(10, U_exact.shape[1])):
+    for i in range(min(64, U_exact.shape[1])):
         perm_i = permutation[i] # U_pred[:, perm_i] aligns to U_exact[:, i]
         sign_i = signs[i]
         
@@ -299,7 +299,7 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     UMU_pred = U_pred.T @ M @ U_pred
     diag_pred = np.diag(UMU_pred)
     off_diag_max_pred = np.max(np.abs(UMU_pred - np.diag(diag_pred)))
-    print(f"Diagonal (should be ~1.0): {diag_pred[:10]}")
+    print(f"Diagonal (should be ~1.0): {diag_pred[:64]}")
     print(f"Max off-diagonal: {off_diag_max_pred:.6e}")
     
     # --- 5. VISUALIZATIONS ---
