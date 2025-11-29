@@ -15,17 +15,34 @@ correctorGNN:
   dropout: 0.0
 
 multigridGNN:
-  epochs: 10000
-  learning_rate: 0.001
-  corrector_scale: 1.0
+  # Extended training for curriculum learning
+  epochs: 20000
+  
+  # Higher initial LR (will decay automatically)
+  learning_rate: 0.005
+  
+  # Smaller corrections = more stable learning
+  corrector_scale: 0.5
+  
+  # Base weights (modulated by curriculum scheduler)
   weight_residual: 1000.0
   weight_orthogonal: 100.0
   weight_projection: 10.0
-  weight_trace: 1.0
-  w_order: 1.0
-  w_eigen: 1.0
+  
+  # The trace (sum of eigenvalues) cannot reach zero - it's fixed by geometry!
+  # Setting this too high fights against physics
+  weight_trace: 0.0
+  
+  # Eigenvalue ordering and matching
+  w_order: 2.0      # Increased: keep modes well-separated
+  w_eigen: 1.0      # Match coarse eigenvalues
+  
+  # Tighter gradient clipping for stability
   gradient_clipping: 10.0
-  weight_decay: 0.00001
+  
+  # Stronger regularization
+  weight_decay: 0.0001
+  
   log_every: 250
 
 runner:
