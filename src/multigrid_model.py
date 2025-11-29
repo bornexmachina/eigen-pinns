@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from scipy.linalg import eigh
 import torch
@@ -11,6 +12,91 @@ class MultigridGNN:
     def __init__(self):
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         self.model = None
+
+    def schedule_curriculum(self, epoch, epochs):
+        """
+        Implements a robust curriculum by very slowly and smoothly increasing 
+        the weights of the 'Orthogonal' and 'Surface Integral' terms 
+        (which appear to be the sources of instability).
+
+        All other successful loss terms are maintained at a constant 1.0 weight.
+        """
+        
+        # --- Define Ramp Parameters ---
+        
+        # We want a very slow ramp over a large fraction of the total epochs (e.g., 80%)
+        Ramp_End_Epoch = int(0.80 * epochs) 
+        Ramp_Start_Epoch = int(0.05 * epochs)  # Start ramp early
+
+        # The steepness parameter (tau) for the Tanh function. 
+        # A larger tau means a shallower, slower ramp.
+        # W is the transition period length
+        W = Ramp_End_Epoch - Ramp_Start_Epoch
+        tau = W / 10.0 
+
+        # --- Smooth Weight Calculation ---
+
+        def _calculate_tanh_weight(current_epoch, start_epoch, end_epoch, ramp_tau):
+            """Calculates a smooth Tanh weight that transitions from 0 to 1."""
+            
+            # Calculate the midpoint of the transition
+            e_mid = start_epoch + (end_epoch - start_epoch) / 2
+            
+            input_val = (current_epoch - e_mid) / ramp_tau
+            
+            # Clip to prevent numerical overflow
+            input_val = np.clip(input_val, -10.0, 10.0) 
+            
+            # Tanh-based Sigmoid: transitions from 0 to 1
+            weight = 0.5 * (1.0 + math.tanh(input_val))
+            
+            # Ensure exact 0 or 1 boundaries for stability
+            if current_epoch <= start_epoch:
+                return 0.0
+            if current_epoch >= end_epoch:
+                return 1.0
+
+            return weight
+
+        # --- Apply Ramps ---
+
+        # Start the orthogonal loss ramp immediately (or very early)
+        w_orthogonal = _calculate_tanh_weight(
+            epoch, 
+            Ramp_Start_Epoch, # Start 5% into training
+            Ramp_End_Epoch,   # End 80% into training
+            tau
+        )
+        
+        # Start the surface integral loss ramp later, but still gradually
+        w_surface_integral = _calculate_tanh_weight(
+            epoch, 
+            int(0.33 * epochs), # Start 33% into training
+            epochs,             # End at the end of training
+            tau
+        )
+
+        # Assuming 'Mean' is related to 'Surface_Integral' and should ramp up similarly, 
+        # or perhaps even later if it's the most sensitive term.
+        w_mean = _calculate_tanh_weight(
+            epoch, 
+            int(0.50 * epochs), # Start 50% into training
+            epochs,             # End at the end of training
+            tau
+        )
+        
+        # --- Return Final Weights ---
+        
+        # The other loss terms are maintained at a constant 1.0 (or their successfully used weights)
+        return {
+            'loss_residual': 1.0, 
+            'loss_orthogonal': w_orthogonal, 
+            'loss_surface_integral': w_surface_integral, 
+            'loss_trace': 1.0, 
+            'loss_eigenvalue_order': 1.0, 
+            'loss_coarse_eigenvalues': 1.0,
+            'loss_mean': w_mean # Include the mean term which was missing from your initial plan
+        }
 
     # ------------------------
     # Physics-informed GNN training
@@ -40,6 +126,15 @@ class MultigridGNN:
 
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), 
                             lr=lr, weight_decay=weight_decay)
+        
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',         # Monitor the loss (minimized)
+            factor=0.5,         # Halve the learning rate
+            patience=20,        # Wait 20 epochs for no improvement
+            min_lr=1e-6         # Don't let LR go below this value
+        )
+        
         self.model.train()
 
         # Precompute Laplacians per level
@@ -60,13 +155,15 @@ class MultigridGNN:
             U_pred = U_all_tensor + corr
 
             # Physics-informed loss
-            loss = 0.0
             loss_residual = 0.0
             loss_orthogonal = 0.0
             loss_surface_integral = 0.0
             loss_trace = 0.0
             loss_eigenvalue_order = 0.0
             loss_coarse_eigenvalues = 0.0
+
+            loss_curriculum = self.schedule_curriculum(ep, epochs)
+
             node_offset = 0
             
             for i, (L_t, M_t, U_init) in enumerate(zip(L_list, M_list, U_init_list)):
@@ -88,12 +185,12 @@ class MultigridGNN:
                 #lambdas = num / den
                 lambdas = torch.sum(U_level_normalized * Lu_norm, dim=0) / (torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12)
                 res = Lu_norm - Mu_norm * lambdas.unsqueeze(0)
-                loss_residual += torch.mean(res**2)
+                loss_residual += torch.mean(res**2) * loss_curriculum['loss_residual']
                 
                 # Orthonormality (should be near-perfect with normalization)
                 Gram = U_level_normalized.t() @ Mu_norm
                 # L_orth = torch.mean((Gram - torch.eye(n_modes, device=device))**2)
-                loss_orthogonal += torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes
+                loss_orthogonal += (torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes) * loss_curriculum['loss_orthogonal']
 
                 # Zero-mean constraint for modes 1+ (NOT mode 0)
                 # Mode 0 is constant, modes 1+ should be zero-mean
@@ -101,20 +198,20 @@ class MultigridGNN:
                 if n_modes > 1:
                     # Project out constant component from modes 1 onwards
                     mean_constraint = ones.t() @ Mu_norm[:, 1:]  # Shape: (1, n_modes-1)
-                    loss_surface_integral += torch.mean(mean_constraint**2)
+                    loss_surface_integral += torch.mean(mean_constraint**2) * loss_curriculum['loss_surface_integral']
                 else:
-                    loss_surface_integral += torch.tensor(0.0, device=device)
+                    loss_surface_integral += torch.tensor(0.0, device=device) * loss_curriculum['loss_surface_integral']
 
                 # Trace minimalization to force smaller modes
-                loss_trace += torch.mean(lambdas)
+                loss_trace += torch.mean(lambdas) * loss_curriculum['loss_trace']
 
                 lambda_diffs = lambdas[1:] - lambdas[:-1]
-                loss_eigenvalue_order += torch.sum(torch.relu(-lambda_diffs))
+                loss_eigenvalue_order += torch.sum(torch.relu(-lambda_diffs)) * loss_curriculum['loss_eigenvalue_order']
 
                 if i == 0 and lambda_coarse is not None:
-                    loss_coarse_eigenvalues += torch.mean((lambdas - lambda_target)**2)
+                    loss_coarse_eigenvalues += torch.mean((lambdas - lambda_target)**2) * loss_curriculum['loss_coarse_eigenvalues']
                 else:
-                    loss_coarse_eigenvalues += torch.tensor(0.0, device=device)
+                    loss_coarse_eigenvalues += torch.tensor(0.0, device=device) * loss_curriculum['loss_coarse_eigenvalues']
 
                 #loss += w_res * L_res + w_orth * L_orth + w_proj * L_mean + w_trace * L_trace + w_order * L_order + w_eigen * L_eigen
                 node_offset += n_nodes
@@ -125,6 +222,7 @@ class MultigridGNN:
                 torch.nn.utils.clip_grad_norm_(filter(lambda p: p.requires_grad, 
                                                     self.model.parameters()), grad_clip)
             optimizer.step()
+            scheduler.step(loss)
 
             if ep % log_every == 0 or ep == epochs-1:
                 print(f"Epoch {ep:4d}: Loss={loss.item():.6f} | "
