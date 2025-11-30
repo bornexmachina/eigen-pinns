@@ -11,11 +11,11 @@ utils:
   knn_graph_neighbors: 9
 
 correctorGNN:
-  hidden_layers: [256, 256, 256, 256, 256, 256]
+  hidden_layers: [256, 256, 256]
   dropout: 0.0
 
 multigridGNN:
-  epochs: 10000
+  epochs: 100000
   learning_rate: 0.001
   corrector_scale: 1.0
   weight_residual: 1000.0
@@ -24,9 +24,10 @@ multigridGNN:
   weight_trace: 1.0
   w_order: 1.0
   w_eigen: 1.0
+  w_multilevel: 50.0
   gradient_clipping: 10.0
   weight_decay: 0.00001
-  log_every: 250
+  log_every: 1000
 
 runner:
   n_modes: 64

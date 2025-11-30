@@ -15,9 +15,11 @@ class MultigridGNN:
     # ------------------------
     # Physics-informed GNN training
     # ------------------------
-    def train_multiresolution(self, X_list, U_init_list, edge_index_list, lambda_coarse, epochs, lr, corr_scale, w_res, w_orth, w_proj, w_trace, w_order, w_eigen, grad_clip, weight_decay, log_every, hidden_layers, dropout):
+    def train_multiresolution(self, X_list, U_init_list, P_list, edge_index_list, lambda_coarse, epochs, lr, corr_scale, w_res, w_orth, w_proj, w_trace, w_order, w_eigen, w_multilevel, grad_clip, weight_decay, log_every, hidden_layers, dropout):
         device = self.device
         n_modes = U_init_list[0].shape[1]
+
+        P_list = [utils.scipy_sparse_to_torch_sparse(P).to(device) for P in P_list]
 
         # Build torch tensors and resolution indicators
         x_feats_all, U_all, edge_index_all = [], [], []
@@ -67,6 +69,9 @@ class MultigridGNN:
             loss_trace = 0.0
             loss_eigenvalue_order = 0.0
             loss_coarse_eigenvalues = 0.0
+            loss_multilevel = torch.tensor(0.0, device=device)
+            n_nodes_prev = None
+
             node_offset = 0
             
             for i, (L_t, M_t, U_init) in enumerate(zip(L_list, M_list, U_init_list)):
@@ -87,13 +92,26 @@ class MultigridGNN:
                 #den = torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12
                 #lambdas = num / den
                 lambdas = torch.sum(U_level_normalized * Lu_norm, dim=0) / (torch.sum(U_level_normalized * Mu_norm, dim=0) + 1e-12)
-                res = Lu_norm - Mu_norm * lambdas.unsqueeze(0)
-                loss_residual += torch.mean(res**2)
+                residuals = Lu_norm - Mu_norm * lambdas.unsqueeze(0)
+
+                # Option A (recommended): weight residual of each mode by its lambda (emphasize higher freq)
+                weights_modes = lambdas.detach() + 1e-6                 # detach so weights don't backprop through lambda calc
+                # normalize weights to have mean 1 to preserve loss scale
+                weights_modes = weights_modes / (torch.mean(weights_modes) + 1e-12)
+                # compute mean squared residual per mode
+                res_mode_mse = torch.mean(residuals**2, dim=0)         # shape: n_modes
+
+                #loss_residual += torch.mean(residuals**2)
+                loss_residual += torch.sum(weights_modes * res_mode_mse)
                 
                 # Orthonormality (should be near-perfect with normalization)
                 Gram = U_level_normalized.t() @ Mu_norm
                 # L_orth = torch.mean((Gram - torch.eye(n_modes, device=device))**2)
-                loss_orthogonal += torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes
+
+                Mu_raw = torch.sparse.mm(M_t, U_level)
+                Gram_raw = U_level.t() @ Mu_raw
+                loss_orthogonal += torch.sum((Gram_raw - torch.eye(n_modes, device=device))**2) / n_modes
+                #loss_orthogonal += torch.sum((Gram - torch.eye(n_modes, device=device))**2) / n_modes
 
                 # Zero-mean constraint for modes 1+ (NOT mode 0)
                 # Mode 0 is constant, modes 1+ should be zero-mean
@@ -116,10 +134,28 @@ class MultigridGNN:
                 else:
                     loss_coarse_eigenvalues += torch.tensor(0.0, device=device)
 
+                if i > 0:
+                    P = P_list[i-1]                      # shape: (n_i, n_{i-1})
+                    U_coarse_pred = U_pred[node_offset - n_nodes_prev : node_offset]  # previous level
+                    U_fine_pred   = U_pred[node_offset : node_offset + n_nodes]
+
+                    # prolongated coarse → fine
+                    U_proj = P @ U_coarse_pred
+
+                    loss_multilevel += torch.mean((U_fine_pred - U_proj)**2)
+                
+                n_nodes_prev = n_nodes 
+
                 #loss += w_res * L_res + w_orth * L_orth + w_proj * L_mean + w_trace * L_trace + w_order * L_order + w_eigen * L_eigen
                 node_offset += n_nodes
 
-            loss = w_res * loss_residual + w_orth * loss_orthogonal + w_proj * loss_surface_integral + w_trace * loss_trace + w_order * loss_eigenvalue_order + w_eigen * loss_coarse_eigenvalues
+            loss = (w_res * loss_residual + 
+                    w_orth * loss_orthogonal + 
+                    w_proj * loss_surface_integral + 
+                    w_trace * loss_trace + 
+                    w_order * loss_eigenvalue_order + 
+                    w_eigen * loss_coarse_eigenvalues +
+                    w_multilevel * loss_multilevel)
             loss.backward()
             if grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(filter(lambda p: p.requires_grad, 
@@ -130,7 +166,8 @@ class MultigridGNN:
                 print(f"Epoch {ep:4d}: Loss={loss.item():.6f} | "
                       f"Res={(w_res * loss_residual).item():.6f} | Orth={(w_orth * loss_orthogonal).item():.6f} | "
                       f"Mean={(w_proj * loss_surface_integral).item():.6f} | Trace={(w_trace * loss_trace).item():.6f} | "
-                      f"Order={(w_order * loss_eigenvalue_order).item():.6f} | Eigen={(w_eigen * loss_coarse_eigenvalues).item():.6f}")
+                      f"Order={(w_order * loss_eigenvalue_order).item():.6f} | Eigen={(w_eigen * loss_coarse_eigenvalues).item():.6f} | "
+                      f"Multi Level={(w_multilevel * loss_multilevel).item():.6f} | ")
 
         # === POST-TRAINING: Final normalization ===
         with torch.no_grad():

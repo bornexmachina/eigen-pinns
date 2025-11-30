@@ -57,6 +57,7 @@ def main():
     # ------------------------
     # Coarse-to-fine prolongation
     # ------------------------
+    P_list = []
     U_prev = U0.copy()
     X_list, U_init_list, edge_index_list = [X0], [U0], [utils.build_knn_graph(X0, k=config.k_neighbors)]
     for level in range(1, len(hierarchy)):
@@ -66,6 +67,7 @@ def main():
         Xf = X_full[idx_fine]
 
         P = utils.build_prolongation(Xc, Xf, k=config.prolongation_neighbors)
+        P_list.append(P)
         U_init_rough = P @ U_prev
 
         # --- SMOOTHING STEP ---
@@ -107,9 +109,10 @@ def main():
     # ------------------------
     print("\nTraining physics-informed multiresolution GNN...")
     solver = MultigridGNN()
-    U_pred_all = solver.train_multiresolution(X_list, U_init_list, edge_index_list, lambda0,
+    U_pred_all = solver.train_multiresolution(X_list, U_init_list, P_list, edge_index_list, lambda0,
                                               epochs=config.epochs, lr=config.learning_rate, corr_scale=config.corrector_scale,
-                                              w_res=config.weight_residual, w_orth=config.weight_orthogonal, w_proj=config.weight_projection, w_trace=config.weight_trace, w_order=config.w_order, w_eigen=config.w_eigen,
+                                              w_res=config.weight_residual, w_orth=config.weight_orthogonal, w_proj=config.weight_projection, w_trace=config.weight_trace, 
+                                              w_order=config.w_order, w_eigen=config.w_eigen, w_multilevel=config.w_multilevel,
                                               grad_clip=config.gradient_clipping, weight_decay=config.weight_decay, log_every=config.log_every,
                                               hidden_layers=config.hidden_layers, dropout=config.dropout)
 
