@@ -8,26 +8,29 @@ config:
 
 
 utils:
-  normalization_eps: 1E-8
-  prolongation_neighbors: 3
-  knn_graph_neighbors: 3
+  normalization_eps: 1E-9
+  prolongation_neighbors: 21
+  knn_graph_neighbors: 21
 
 correctorGNN:
-  hidden_layers: [128, 128, 128, 128]
+  hidden_layers: [256, 256, 256, 256, 256, 256]
   dropout: 0.0
 
 multigridGNN:
-  epochs: 10000
-  learning_rate: 0.0001
-  corrector_scale: 0.1
-  weight_residual: 5.0
-  weight_orthogonal: 5.0
-  weight_projection: 0.1
-  gradient_clipping: 1.0
+  epochs: 25000
+  learning_rate: 0.001
+  corrector_scale: 1.0
+  weight_residual: 5000.0
+  weight_orthogonal: 500.0
+  weight_projection: 10.0
+  weight_trace: 1.0
+  w_order: 1.0
+  w_eigen: 10.0
+  gradient_clipping: 10.0
   weight_decay: 0.00001
-  log_every: 250
+  log_every: 1000
 
 runner:
-  n_modes: 128
+  n_modes: 64
   hierarchy: [256, 512, 1024]
-  k_neighbors: 4
+  k_neighbors: 21

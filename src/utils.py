@@ -67,6 +67,58 @@ def solve_eigenvalue_mesh(mesh, n_modes):
     return vals, np.array(vecs), K, M
 
 
+def sparse_block_diag(sparse_tensor_list: list) -> torch.Tensor:
+    """
+    Combines a list of square sparse tensors into a single block-diagonal sparse tensor.
+    Assumes all tensors are torch.sparse_coo_tensor.
+    """
+    if not sparse_tensor_list:
+        return None
+
+    # Calculate total dimensions
+    n_rows_list = [t.shape[0] for t in sparse_tensor_list]
+    n_cols_list = [t.shape[1] for t in sparse_tensor_list]
+    total_rows = sum(n_rows_list)
+    total_cols = sum(n_cols_list)
+
+    # Collect and offset indices/values
+    all_indices = []
+    all_values = []
+    
+    current_row_offset = 0
+    current_col_offset = 0
+
+    for t in sparse_tensor_list:
+        indices = t.indices()
+        values = t.values()
+        
+        # Add offset to indices
+        offset_indices = indices.clone()
+        offset_indices[0, :] += current_row_offset
+        offset_indices[1, :] += current_col_offset
+        
+        all_indices.append(offset_indices)
+        all_values.append(values)
+
+        current_row_offset += t.shape[0]
+        current_col_offset += t.shape[1]
+
+    # Concatenate all indices and values
+    final_indices = torch.cat(all_indices, dim=1)
+    final_values = torch.cat(all_values, dim=0)
+
+    # Create the final block-diagonal sparse tensor
+    # The device should be inferred from the components, but we enforce it
+    device = sparse_tensor_list[0].device
+    
+    return torch.sparse_coo_tensor(
+        final_indices, 
+        final_values, 
+        (total_rows, total_cols), 
+        device=device
+    ).coalesce()
+
+
 def post_training_diagnostics(UMU, n_modes, output_file):
     print("\nOrthonormality check (should be Identity):")
     print("Diagonal:", np.diag(UMU)[:10])
@@ -133,6 +185,43 @@ def align_eigenvectors(U_pred, U_exact, M=None):
     return U_aligned_ps, row_ind, signs
 
 
+def orthonormalize(U, M):
+    """
+    Gram-Schmidt orthonormalization of U with respect to mass matrix M.
+    U: (N, k) numpy array
+    M: (N, N) scipy sparse matrix
+    """
+    n_modes = U.shape[1]
+    U_orth = np.zeros_like(U)
+
+    for i in range(n_modes):
+        v = U[:, i].copy()
+        # Project out previous modes
+        for j in range(i):
+            u_j = U_orth[:, j]
+            # overlap = <u_j, v>_M = u_j.T @ M @ v
+            overlap = u_j.T @ M @ v
+            v -= overlap * u_j
+
+        # Normalize
+        norm_v = np.sqrt(v.T @ M @ v)
+        U_orth[:, i] = v / (norm_v + 1e-12)
+
+    return U_orth
+
+
+def jacobi_smooth(M, L, U_rough, alpha=0.05, n_iters=5):
+    """Cheap iterative smoothing instead of direct solve"""
+    U = U_rough.copy()
+    D_inv = 1.0 / (M.diagonal() + alpha * L.diagonal() + 1e-12)
+
+    for _ in range(n_iters):
+        residual = M @ U_rough - (M + alpha * L) @ U
+        U += D_inv[:, None] * residual
+
+    return U
+
+
 # ----------------------------------------------------------------------
 # 2. Subspace Alignment (Orthogonal Procrustes Analysis via SVD)
 # ----------------------------------------------------------------------
@@ -177,7 +266,7 @@ def get_subspace_error_and_alignment(U_pred, U_exact, M=None):
 # 3. Comprehensive Diagnostics (The main function with improvements)
 # ----------------------------------------------------------------------
 
-def comprehensive_diagnostics(U_pred, U_exact, X, config):
+def comprehensive_diagnostics(U_pred, U_exact, X, config, L=None, M=None):
     """
     Comprehensive diagnostics for comparing predicted and exact eigenvectors,
     including both permutation/sign alignment (for mode-by-mode tracking)
@@ -188,7 +277,8 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     print("="*80)
     
     # --- 0. Setup: Compute Laplacian and Mass matrix ---
-    L, M = robust_laplacian.point_cloud_laplacian(X)
+    if L is None or M is None:
+        L, M = robust_laplacian.point_cloud_laplacian(X)
 
 
     # --- 1. Compute Eigenvalues via Rayleigh Quotient ---
@@ -221,10 +311,10 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     # --- 1. EIGENVALUE COMPARISON (using Permutation-aligned modes) ---
     print("\n1. EIGENVALUE COMPARISON (Permutation-Aligned)")
     print("-" * 80)
-    print(f"{'Mode':<6} {'Î»_exact':<12} {'Î»_pred (aligned)':<18} {'Rel Error':<12}")
+    print(f"{'Mode':<6} {'λ_exact':<12} {'λ_pred (aligned)':<18} {'Rel Error':<12}")
     print("-" * 80)
     
-    for i in range(min(10, len(lambda_exact))):
+    for i in range(min(64, len(lambda_exact))):
         lambda_exact_i = lambda_exact[i]
         lambda_aligned_i = lambda_pred_ordered[i] 
         rel_error = abs(lambda_aligned_i - lambda_exact_i) / (abs(lambda_exact_i) + 1e-12)
@@ -238,7 +328,7 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     print(f"{'Mode':<6} {'Permutation':<12} {'Sign':<6} {'Cosine Sim':<12} {'L2 Error (PS)':<14}")
     print("-" * 80)
     
-    for i in range(min(10, U_exact.shape[1])):
+    for i in range(min(64, U_exact.shape[1])):
         perm_i = permutation[i] # U_pred[:, perm_i] aligns to U_exact[:, i]
         sign_i = signs[i]
         
@@ -270,7 +360,7 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config):
     UMU_pred = U_pred.T @ M @ U_pred
     diag_pred = np.diag(UMU_pred)
     off_diag_max_pred = np.max(np.abs(UMU_pred - np.diag(diag_pred)))
-    print(f"Diagonal (should be ~1.0): {diag_pred[:10]}")
+    print(f"Diagonal (should be ~1.0): {diag_pred[:64]}")
     print(f"Max off-diagonal: {off_diag_max_pred:.6e}")
     
     # --- 5. VISUALIZATIONS ---

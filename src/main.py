@@ -22,6 +22,12 @@ def main():
     n_total = X_full.shape[0]
     K_total, M_total = mesh_helpers.compute_stiffness_and_mass_matrices(mesh)
 
+
+    #lambda_exact, _, _, _ = utils.solve_eigenvalue_mesh(mesh, config.n_modes)
+
+    #print(lambda_exact)
+    #print(f"*******************************")
+
     print("Loading coarse meshes...")
     mesh_list = []
     X_list = []
@@ -72,7 +78,9 @@ def main():
     for level in range(1, len(hierarchy)):
         P = utils.build_prolongation(X_list[level-1], X_list[level], k=config.prolongation_neighbors)
         U_init = P @ U_prev
-        edge_index = utils.build_knn_graph(X_list[level], k=config.k_neighbors)
+        U_init = utils.jacobi_smooth(M_list[level], K_list[level], U_init, alpha=0.1, n_iters=10)
+        # edge_index = utils.build_knn_graph(X_list[level], k=config.k_neighbors)
+        edge_index = mesh_helpers.mesh_to_edge_index(mesh_list[level])
 
         U_init_list.append(U_init)
         edge_index_list.append(edge_index)
@@ -84,9 +92,9 @@ def main():
     # ------------------------
     print("\nTraining physics-informed multiresolution GNN...")
     solver = MultigridGNN()
-    U_pred_all = solver.train_multiresolution(X_list, K_list, M_list, U_init_list, edge_index_list, 
+    U_pred_all = solver.train_multiresolution(X_list, K_list, M_list, U_init_list, lambda0, edge_index_list, 
                                               epochs=config.epochs, lr=config.learning_rate, corr_scale=config.corrector_scale,
-                                              w_res=config.weight_residual, w_orth=config.weight_orthogonal, w_proj=config.weight_projection,
+                                              w_res=config.weight_residual, w_orth=config.weight_orthogonal, w_proj=config.weight_projection, w_trace=config.weight_trace, w_order=config.w_order, w_eigen=config.w_eigen,
                                               grad_clip=config.gradient_clipping, weight_decay=config.weight_decay, log_every=config.log_every,
                                               hidden_layers=config.hidden_layers, dropout=config.dropout)
 
@@ -107,6 +115,7 @@ def main():
     print(f"--- sum of nodes: {sum(hierarchy[:-1])}")
 
     U_finest = U_pred_all[node_offset:]
+    K_finest = K_list[-1]
     M_finest = M_list[-1]
 
     # Check orthonormality
@@ -116,7 +125,7 @@ def main():
 
     lambda_exact, U_exact, _, _ = utils.solve_eigenvalue_mesh(mesh, config.n_modes)
 
-    utils.comprehensive_diagnostics(U_pred, U_exact, X_full, config)
+    utils.comprehensive_diagnostics(U_pred, U_exact, X_full, config, K_finest, M_finest)
 
     return U_pred
 
