@@ -31,13 +31,18 @@ def main():
     # Use Voxel Grid Downsampling for nested hierarchy
     print("Computing voxel grid downsampling hierarchy...")
     indices_per_level = samplers.voxel_downsampling(X_full, hierarchy)
+
+    actual_hierarchy = []
     
     for i, n_points in enumerate(hierarchy):
         actual_count = len(indices_per_level[i])
+        actual_hierarchy.append(actual_count)
         print(f"  Level {i}: {actual_count} points (voxel downsampling, target: {n_points})")
 
+    print("Actual hierarchy:", actual_hierarchy)
+
     if config.do_extensive_visuals:
-        for level_idx_vis, n_points in enumerate(hierarchy):
+        for level_idx_vis, n_points in enumerate(indices_per_level):
             # Visualize selected points for this level
             mesh_helpers.visualize_mesh(mesh, title=f'Level {level_idx_vis}: {len(indices_per_level[level_idx_vis])} Voxel Downsampled Points', highlight_indices=indices_per_level[level_idx_vis])
         print()
@@ -113,36 +118,46 @@ def main():
                                               grad_clip=config.gradient_clipping, weight_decay=config.weight_decay, log_every=config.log_every,
                                               hidden_layers=config.hidden_layers, dropout=config.dropout)
 
-    # ------------------------
-    # Rayleigh-Ritz refinement per level
-    # ------------------------
-    node_offset = 0
-    for level, X in enumerate(X_list):
-        n_nodes = X.shape[0]
-        U_pred = U_pred_all[node_offset:node_offset+n_nodes]
-        node_offset += n_nodes
-        L, M = robust_laplacian.point_cloud_laplacian(X)
-        vals_refined, _ = solver.refine_eigenvectors(U_pred, L, M)
-        if config.verbose:
-            print(f"Level {level} refined eigenvalues: {np.round(vals_refined,3)}")
+    # === CRITICAL FIX: Extract finest level correctly ===
 
-    node_offset = sum(X.shape[0] for X in X_list[:-1])
-    U_finest = U_pred_all[node_offset:]
-
+    node_offset = sum(actual_hierarchy[:-1])  # Sum of all coarse levels
+    print(f"\n--- Extracting finest level ---")
+    print(f"Node offset: {node_offset}")
+    print(f"Total nodes in U_pred_all: {U_pred_all.shape[0]}")
+    print(f"Expected finest level nodes: {actual_hierarchy[-1]}")
+    
+    U_finest = U_pred_all[node_offset:node_offset + actual_hierarchy[-1]]
+    print(f"Extracted U_finest shape: {U_finest.shape}")
+    
+    # Verify extraction
+    assert U_finest.shape[0] == actual_hierarchy[-1], f"Mismatch! Got {U_finest.shape[0]}, expected {actual_hierarchy[-1]}"
+    
     X_finest = X_list[-1]
-    _, M_finest = robust_laplacian.point_cloud_laplacian(X_finest)
+    L_finest, M_finest = robust_laplacian.point_cloud_laplacian(X_finest)
+
+    # === CRITICAL FIX: Perform Rayleigh-Ritz refinement on finest level ===
+    print("\n--- Rayleigh-Ritz refinement on finest level ---")
+    vals_refined, U_refined = solver.refine_eigenvectors(U_finest, L_finest, M_finest)
+    print(f"Refined eigenvalues (first 10): {np.round(vals_refined[:10], 6)}")
 
     # Check orthonormality
-    UMU = U_finest.T @ M_finest @ U_finest
+    UMU = U_refined.T @ M_finest @ U_refined
     utils.post_training_diagnostics(UMU, config.n_modes, config.diagnostics_viz)
-    mesh_helpers.save_eigenfunctions(mesh, U_pred, config.n_modes, config.vtu_file)
 
+    # Save eigenfunctions
+    mesh_helpers.save_eigenfunctions(mesh, U_refined, config.n_modes, config.vtu_file)
 
+    # === CRITICAL FIX: Compare refined eigenvectors against exact solution ===
+    print("\n--- Computing exact solution for comparison ---")
     lambda_exact, U_exact, _, _ = utils.solve_eigenvalue_problem(X_full, config.n_modes)
+    print(f"Exact eigenvalues (first 10): {np.round(lambda_exact[:10], 6)}")
 
-    utils.comprehensive_diagnostics(U_pred, U_exact, X, config)
+    utils.comprehensive_diagnostics(U_finest, U_exact, X_finest, config)
 
-    return U_pred
+    # Run comprehensive diagnostics with REFINED eigenvectors
+    #utils.comprehensive_diagnostics_improved(U_refined, U_exact, X_full, config, K_finest, M_finest)
+
+    return U_finest
 
 
 if __name__ == "__main__":
