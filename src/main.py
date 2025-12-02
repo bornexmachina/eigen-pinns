@@ -83,6 +83,7 @@ def main():
 
         U_init = P @ U_prev
         U_init = utils.jacobi_smooth(M_list[level], K_list[level], U_init, alpha=0.1, n_iters=10)
+        
         # edge_index = utils.build_knn_graph(X_list[level], k=config.k_neighbors)
         edge_index = mesh_helpers.mesh_to_edge_index(mesh_list[level])
 

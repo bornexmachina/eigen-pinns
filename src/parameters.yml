@@ -13,13 +13,13 @@ utils:
   knn_graph_neighbors: 21
 
 correctorGNN:
-  hidden_layers: [256, 256, 256]
+  hidden_layers: [256, 256, 256, 256, 256, 256]
   dropout: 0.0
 
 multigridGNN:
   epochs: 25000
-  learning_rate: 0.01
-  corrector_scale: 1.0
+  learning_rate: 0.001
+  corrector_scale: 10.0
   weight_residual: 1000.0
   weight_orthogonal: 10.0
   weight_projection: 0.0
