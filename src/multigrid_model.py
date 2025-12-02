@@ -547,6 +547,9 @@ class MultigridGNN:
         M_t = utils.scipy_sparse_to_torch_sparse(M).to(self.device)
         A = (U.t() @ torch.sparse.mm(K_t, U)).cpu().numpy()
         B = (U.t() @ torch.sparse.mm(M_t, U)).cpu().numpy()
+
+        print(f"------- A: {A.shape} -- B: {B.shape} ------")
+
         vals, C = eigh(A, B)
         U_refined = U.cpu().numpy() @ C
         return vals, U_refined
