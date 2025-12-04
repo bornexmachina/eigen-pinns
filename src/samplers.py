@@ -1,4 +1,7 @@
 import numpy as np
+import meshio
+import pyvista as pv
+import matplotlib.pyplot as plt
 
 
 def voxel_downsampling(points, hierarchy_levels):
@@ -114,3 +117,107 @@ def farthest_point_sampling(points, n_samples, seed=None):
         selected_indices.append(farthest_idx)
     
     return np.array(selected_indices)
+
+
+def simplify_mesh_decimation(input_file, target_vertices, save_file=False, output_dir=None, output_prefix=None):
+    """Simplify mesh using quadric decimation algorithm."""
+    # Read input mesh
+    mesh = meshio.read(input_file)
+    vertices = mesh.points
+    faces = mesh.cells_dict.get('triangle', mesh.cells_dict.get('polygon', None))
+    
+    if faces is None:
+        raise ValueError("No triangle or polygon cells found in mesh")
+    
+    print(f"Input mesh: {len(vertices)} vertices, {len(faces)} faces")
+    
+    # Convert to PyVista mesh
+    faces_pv = np.hstack([[3] + list(face) for face in faces])
+    pv_mesh = pv.PolyData(vertices, faces_pv)
+    
+    simplified_meshes = []
+    
+    for target_v in target_vertices:
+        print(f"\nSimplifying to ~{target_v} vertices...")
+        
+        # Calculate target reduction ratio
+        reduction = 1.0 - (target_v / len(vertices))
+        reduction = max(0.0, min(0.99, reduction))  # Clamp between 0 and 0.99
+        
+        print(f"  Target reduction: {reduction*100:.1f}%")
+        
+        # Apply decimation
+        simplified = pv_mesh.decimate(
+            reduction,
+            volume_preservation=True
+        )
+        
+        # Extract vertices and faces
+        verts_simplified = simplified.points
+        faces_simplified = simplified.faces.reshape(-1, 4)[:, 1:4]
+        
+        # Save mesh
+        output_mesh = meshio.Mesh(points=verts_simplified, cells=[("triangle", faces_simplified)])
+
+        if save_file:
+            output_file = f"{output_dir}/{output_prefix}_{len(verts_simplified)}.obj"
+            meshio.write(output_file, output_mesh)
+            print(f"  Saved: {output_file} ({len(verts_simplified)} vertices, {len(faces_simplified)} faces)")
+
+        simplified_meshes.append(output_mesh)
+    
+    return simplified_meshes
+
+
+def visualize_decimation(input_mesh_file, output_prefix, target_vertices):
+
+    simplified_meshes = simplify_mesh_decimation(input_mesh_file, target_vertices=target_vertices)
+
+    print("\n" + "="*50)
+    print("Summary:")
+    for idx, simplified_mesh in enumerate(simplified_meshes):
+        print(f"  {idx} simplified mesh: {len(simplified_mesh.points)} vertices")
+
+    # Plot the simplified meshes
+    print("\nGenerating plots...")
+    n_meshes = len(simplified_meshes) + 1  # +1 for original
+    fig = plt.figure(figsize=(5*n_meshes, 5))
+
+    # Plot original mesh
+    original_mesh = meshio.read(input_mesh_file)
+    original_faces = original_mesh.cells_dict.get('triangle', original_mesh.cells_dict.get('polygon', None))
+    ax = fig.add_subplot(1, n_meshes, 1, projection='3d')
+    ax.plot_trisurf(original_mesh.points[:, 0], 
+                    original_mesh.points[:, 1], 
+                    original_mesh.points[:, 2],
+                    triangles=original_faces,
+                    cmap='viridis', 
+                    alpha=0.8, 
+                    edgecolor='none')
+    ax.set_title(f'Original\n{len(original_mesh.points)} vertices')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.view_init(elev=95, azim=-90)
+
+    # Plot simplified meshes
+    for idx, simplified_mesh in enumerate(simplified_mesh, start=2):
+        simplified_faces = simplified_mesh.cells_dict.get('triangle', simplified_mesh.cells_dict.get('polygon', None))
+        ax = fig.add_subplot(1, n_meshes, idx, projection='3d')
+        ax.plot_trisurf(simplified_mesh.points[:, 0], 
+                        simplified_mesh.points[:, 1], 
+                        simplified_mesh.points[:, 2],
+                        triangles=simplified_faces,
+                        cmap='plasma', 
+                        alpha=0.8, 
+                        edgecolor='none')
+        ax.set_title(f'Simplified\n{len(simplified_mesh.points)} vertices')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.view_init(elev=95, azim=-90)
+
+    plt.tight_layout()
+    plt.savefig(f'{output_prefix}_comparison.png', dpi=150, bbox_inches='tight')
+    print(f"Saved plot: {output_prefix}_comparison.png")
+    plt.show()

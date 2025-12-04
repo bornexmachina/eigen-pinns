@@ -33,6 +33,8 @@ class SimpleCorrector(nn.Module):
 
 # ------------------------
 # Spectral Corrector (GCN-like)
+# GraphSAGE
+# https://arxiv.org/pdf/1706.02216 
 # ------------------------
 class SpectralCorrector(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, hidden_layers: List[int], dropout: float):
@@ -58,21 +60,22 @@ class SpectralCorrector(nn.Module):
         Performs one GCN-like aggregation step followed by an MLP.
 
         Args:
-            x (torch.Tensor): Node features of shape (N, in_dim).
-            A_norm_sparse (torch.Tensor): Pre-computed normalized adjacency matrix 
-                                         (D_hat^-1/2 * A_hat * D_hat^-1/2) 
-                                         of shape (N, N) as a sparse tensor.
+            x (torch.Tensor): 
+                Node features of shape (N, in_dim).
+            A_norm_sparse (torch.Tensor):
+                Graph structure 
+                Pre-computed normalized adjacency matrix 
+                (D_hat^-1/2 * A_hat * D_hat^-1/2) 
+                of shape (N, N) as a sparse tensor.
 
         Returns:
             torch.Tensor: The predicted correction vector (N, out_dim).
         """
         
         # 1. GCN-like Aggregation (H^(l+1) = A_norm * H^(l))
-        # This replaces the simple mean aggregation
         agg = torch.sparse.mm(A_norm_sparse, x)
         
-        # 2. Concatenate and pass through MLP
-        # h = [x, agg]
+        # 2. Residual connection: Concatenate and pass through MLP
         h = torch.cat([x, agg], dim=1)
         
         # 3. Output correction vector

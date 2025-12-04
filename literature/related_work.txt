@@ -1,0 +1,4 @@
+A. Brandt — “Multi-level adaptive solutions to boundary-value problems” (1977)
+A. Brandt — “Multigrid Methods for Differential Eigenproblems” (1983)
+Zhang, et al. — “An algebraic multigrid method for eigenvalue problems and its numerical tests” (2021)
+Heiskanen, Ramos, and Puska — “A novel multigrid method for electronic structure calculations” 
