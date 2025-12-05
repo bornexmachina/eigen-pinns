@@ -1,34 +1,40 @@
 config:
   mesh_file: "./resources/bunny.obj"
+  coarse_mesh_files: ["./resources/coarse_1.obj", "./resources/coarse_2.obj", "./resources/coarse_3.obj"]
   diagnostics_viz: "./outputs/diagnostics.png"
   vtu_file: "./outputs/bunny_model.vtu"
   verbose: false
   do_extensive_visuals: false
 
+sampler:
+  sampler_type: 'farthest_point'
+  edge_computation_type: 'knn_based'
+
 utils:
   normalization_eps: 1E-9
-  prolongation_neighbors: 9
-  knn_graph_neighbors: 9
+  prolongation_neighbors: 21
+  knn_graph_neighbors: 21
 
 correctorGNN:
+  model_type: 'simple'
   hidden_layers: [256, 256, 256, 256, 256, 256]
   dropout: 0.0
 
 multigridGNN:
   epochs: 10000
   learning_rate: 0.001
-  corrector_scale: 1.0
+  corrector_scale: 10.0
   weight_residual: 1000.0
-  weight_orthogonal: 100.0
-  weight_projection: 10.0
-  weight_trace: 1.0
-  w_order: 1.0
-  w_eigen: 1.0
+  weight_orthogonal: 10.0
+  weight_projection: 0.0
+  weight_trace: 0.0
+  w_order: 0.0
+  w_eigen: 0.0
   gradient_clipping: 10.0
   weight_decay: 0.00001
-  log_every: 250
+  log_every: 1000
 
 runner:
   n_modes: 64
   hierarchy: [256, 512, 1024]
-  k_neighbors: 4
+  k_neighbors: 21
