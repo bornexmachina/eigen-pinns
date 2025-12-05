@@ -469,18 +469,14 @@ def comprehensive_diagnostics(U_pred, U_exact, X, config, L, M):
     # 5. VISUALIZATIONS
     # -------------------------------------------------------------------------
     if config.diagnostics_viz:
-        _create_diagnostic_plots(
-            lambda_exact, lambda_pred_ordered, rel_errors, cos_sims,
-            UMU, U_aligned_ps, U_exact, M_dense, permutation, config
-        )
+        _create_diagnostic_plots(lambda_exact, lambda_pred_ordered, rel_errors, cos_sims, UMU, config)
     
     print("\n" + "="*80)
 
 
-def _create_diagnostic_plots(lambda_exact, lambda_pred, rel_errors, cos_sims,
-                             UMU, U_aligned, U_exact, M, permutation, config):
+def _create_diagnostic_plots(lambda_exact, lambda_pred, rel_errors, cos_sims, UMU, config):
     """Create comprehensive diagnostic visualization."""
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(2, 2, figsize=(18, 12))
     
     # Plot 1: Eigenvalue comparison
     axes[0, 0].plot(lambda_exact[1:30], 'o-', label='Exact', 
@@ -501,37 +497,21 @@ def _create_diagnostic_plots(lambda_exact, lambda_pred, rel_errors, cos_sims,
     axes[0, 1].grid(True, alpha=0.3)
     
     # Plot 3: Cosine similarities
-    axes[0, 2].plot(cos_sims[1:30], 'o-', linewidth=2)
-    axes[0, 2].axhline(y=0.95, color='r', linestyle='--', 
-                      alpha=0.5, label='Target (0.95)')
-    axes[0, 2].set_xlabel('Mode Index', fontsize=12)
-    axes[0, 2].set_ylabel('Cosine Similarity', fontsize=12)
-    axes[0, 2].set_title('Eigenvector Alignment Quality', fontsize=14)
-    axes[0, 2].legend(fontsize=10)
-    axes[0, 2].grid(True, alpha=0.3)
+    axes[1, 0].plot(cos_sims[1:30], 'o-', linewidth=2)
+    # axes[1, 0].axhline(y=0.95, color='r', linestyle='--', alpha=0.5, label='Target (0.95)')
+    axes[1, 0].set_xlabel('Mode Index', fontsize=12)
+    axes[1, 0].set_ylabel('Cosine Similarity', fontsize=12)
+    axes[1, 0].set_title('Eigenvector Alignment Quality', fontsize=14)
+    axes[1, 0].legend(fontsize=10)
+    axes[1, 0].grid(True, alpha=0.3)
     
     # Plot 4: Gram matrix
-    im1 = axes[1, 0].imshow(np.abs(UMU), cmap='RdYlGn_r', vmin=0, vmax=1.1)
-    axes[1, 0].set_title('|U^T M U| - Orthonormality', fontsize=14)
-    plt.colorbar(im1, ax=axes[1, 0])
-    
-    # Plot 5: Overlap matrix
-    overlap = U_aligned.T @ M @ U_exact
-    im2 = axes[1, 1].imshow(np.abs(overlap), cmap='RdYlGn_r', vmin=0, vmax=1.1)
-    axes[1, 1].set_title('|U_aligned^T M U_exact|', fontsize=14)
-    plt.colorbar(im2, ax=axes[1, 1])
-    
-    # Plot 6: Permutation matrix
-    perm_matrix = np.zeros((config.n_modes, config.n_modes))
-    for i in range(config.n_modes):
-        perm_matrix[permutation[i], i] = 1
-    im3 = axes[1, 2].imshow(perm_matrix[:30, :30], cmap='binary', vmin=0, vmax=1)
-    axes[1, 2].set_title('Permutation Matrix (30x30)', fontsize=14)
-    axes[1, 2].set_xlabel('Exact Mode', fontsize=12)
-    axes[1, 2].set_ylabel('Predicted Mode', fontsize=12)
+    im1 = axes[1, 1].imshow(np.abs(UMU), cmap='magma', vmin=0, vmax=1.1)
+    axes[1, 1].set_title('|U^T M U| - Orthonormality', fontsize=14)
+    plt.colorbar(im1, ax=axes[1, 1])
     
     plt.tight_layout()
-    save_path = config.diagnostics_viz.replace('.png', '_improved.png')
+    save_path = config.diagnostics_viz.replace('.png', '.png')
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\nDiagnostic plots saved to: {save_path}")
 

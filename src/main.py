@@ -1,13 +1,6 @@
-# multigrid_gnn_multires_physics.py
-"""
-Physics-informed Multigrid + GNN eigen-refinement
-- Exact solve only on coarsest mesh
-- Multiresolution GNN with residual + orthonormality + projection loss
-- Coarse-to-fine prolongation only
-"""
-
 import numpy as np
 import utils
+import samplers
 import mesh_helpers
 from multigrid_model import MultigridGNN
 from config import PINNConfig
@@ -30,8 +23,10 @@ def main():
     M_list = []
     P_list = []
 
-    for coarse_mesh_file in config.coarse_mesh_files:
-        coarse_mesh = mesh_helpers.load_mesh(coarse_mesh_file, normalize=True)
+    coarse_meshes = samplers.simplify_mesh_decimation(config.mesh_file, config.hierarchy)
+
+    for coarse_mesh in coarse_meshes:
+        coarse_mesh = mesh_helpers.meshio_to_Mesh(coarse_mesh, normalize=True)
         X_coarse = coarse_mesh.verts
         n_coarse = X_coarse.shape[0]
         K_coarse, M_coarse = mesh_helpers.compute_stiffness_and_mass_matrices(coarse_mesh)
@@ -117,10 +112,6 @@ def main():
     print("\n--- Rayleigh-Ritz refinement on finest level ---")
     vals_refined, U_refined = solver.refine_eigenvectors(U_finest, K_finest, M_finest)
     print(f"Refined eigenvalues (first 10): {np.round(vals_refined[:10], 6)}")
-
-    # Check orthonormality
-    UMU = U_refined.T @ M_finest @ U_refined
-    utils.post_training_diagnostics(UMU, config.n_modes, config.diagnostics_viz)
 
     # Save eigenfunctions
     mesh_helpers.save_eigenfunctions(mesh, U_refined, config.n_modes, config.vtu_file)

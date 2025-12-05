@@ -1,7 +1,7 @@
 import numpy as np
 import meshio
-import matplotlib.pyplot as plt
 from scipy.sparse import coo_matrix
+import matplotlib.pyplot as plt
 from Mesh import Mesh
 
 
@@ -83,3 +83,10 @@ def mesh_to_edge_index(mesh):
     edges = np.unique(edges, axis=1)
     
     return torch.LongTensor(edges)
+
+
+def meshio_to_Mesh(meshio_mesh, normalize=True):
+    mesh = Mesh(verts=meshio_mesh.points, connectivity=meshio_mesh.cells_dict['triangle'])
+    if normalize:
+        mesh = normalize_mesh(mesh)
+    return mesh
