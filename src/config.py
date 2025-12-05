@@ -3,9 +3,11 @@ import yaml
 
 class PINNConfig:
     def __init__(self, mesh_file, n_modes, hierarchy, k_neighbors, epochs, learning_rate, corrector_scale,
-                 weight_residual, weight_orthogonal, weight_projection, weight_trace, w_order, w_eigen, gradient_clipping, weight_decay, log_every,
+                 weight_residual, weight_orthogonal, weight_projection, weight_trace, w_order, w_eigen, 
+                 gradient_clipping, weight_decay, log_every,
                  hidden_layers, dropout, normalization_eps, prolongation_neighbors, knn_graph_neighbors,
-                 verbose, do_extensive_visuals, diagnostics_viz, vtu_file):
+                 verbose, do_extensive_visuals, diagnostics_viz, vtu_file, coarse_mesh_files,
+                 sampler_type, edge_computation_type, model_type):
         self.mesh_file = mesh_file
         self.n_modes = n_modes
         self.hierarchy = hierarchy
@@ -31,6 +33,10 @@ class PINNConfig:
         self.do_extensive_visuals = do_extensive_visuals
         self.diagnostics_viz = diagnostics_viz
         self.vtu_file = vtu_file
+        self.coarse_mesh_files = coarse_mesh_files
+        self.sampler_type = sampler_type
+        self.edge_computation_type = edge_computation_type
+        self.model_type = model_type
 
     @classmethod
     def from_yaml(cls, file='./src/parameters.yml'):
