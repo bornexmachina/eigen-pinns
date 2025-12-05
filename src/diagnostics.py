@@ -129,7 +129,12 @@ def comprehensive_diagnostics(U_pred, mesh, sampler, config):
 
     # Compare refined eigenvectors against exact solution
     print("Computing exact solution for comparison...")
-    lambda_exact, U_exact, _, _ = utils.solve_eigenvalue_mesh(mesh, config.n_modes)
+    if config.sampler_type == 'graph_coarsening':
+        lambda_exact, U_exact, _, _ = utils.solve_eigenvalue_mesh(mesh, config.n_modes)
+    elif config.sampler_type in ['farthest_point', 'voxel_downsampling']:
+        lambda_exact, U_exact, _, _ = utils.solve_eigenvalue_point_cloud(sampler.X_list[-1], config.n_modes)
+    else:
+        raise ValueError(f"Provided sampler type {config.sampler_type} is not supported!")
     print(f"Exact eigenvalues (first 10): {np.round(lambda_exact[:10], 6)}")
 
     L = sampler.K_list[-1]
@@ -276,11 +281,9 @@ def _create_diagnostic_plots(lambda_exact, lambda_pred, rel_errors, cos_sims, UM
     
     # Plot 3: Cosine similarities
     axes[1, 0].plot(cos_sims[1:30], 'o-', linewidth=2)
-    # axes[1, 0].axhline(y=0.95, color='r', linestyle='--', alpha=0.5, label='Target (0.95)')
     axes[1, 0].set_xlabel('Mode Index', fontsize=12)
     axes[1, 0].set_ylabel('Cosine Similarity', fontsize=12)
     axes[1, 0].set_title('Eigenvector Alignment Quality', fontsize=14)
-    axes[1, 0].legend(fontsize=10)
     axes[1, 0].grid(True, alpha=0.3)
     
     # Plot 4: Gram matrix

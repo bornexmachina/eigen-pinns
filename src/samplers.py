@@ -86,7 +86,10 @@ def _voxel_downsampling(mesh, hierarchy):
         indices_per_level[level_idx] = best_indices[:target_count] if len(best_indices) > target_count else best_indices
 
     # finally add the full mesh
-    indices_per_level[level_idx+1] = np.arange(n_points)
+    indices_per_level[level_idx+1] = np.arange(0, len(points))
+
+    for v in indices_per_level.values():
+        v.sort()
     
     return indices_per_level
 
@@ -132,7 +135,10 @@ def _farthest_point_sampling(mesh, hierarchy):
         indices_per_level[i] = all_sampled_indices[:n_points].copy()
 
     # finally add the full mesh
-    indices_per_level[i+1] = all_sampled_indices.copy()
+    indices_per_level[i+1] = np.arange(0, len(points))
+
+    for v in indices_per_level.values():
+        v.sort()
     
     return indices_per_level
 
@@ -231,7 +237,7 @@ class Sampler:
             self.indices_per_level = self._grid_coarsening(mesh, hierarchy)
             self.meshes.append(mesh)
 
-            for idx in self.indices_per_level:
+            for idx in self.indices_per_level.values():
                 X_coarse = mesh.verts[idx]
                 n_coarse = X_coarse.shape[0]
                 K_coarse, M_coarse = mesh_helpers.compute_laplacian_and_mass_matrices(X_coarse)

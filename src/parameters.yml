@@ -7,7 +7,7 @@ config:
   do_extensive_visuals: false
 
 sampler:
-  sampler_type: 'graph_coarsening'
+  sampler_type: 'farthest_point'
   edge_computation_type: 'knn_based'
 
 utils:
@@ -16,7 +16,7 @@ utils:
   knn_graph_neighbors: 21
 
 correctorGNN:
-  model_type: 'spectral'
+  model_type: 'simple'
   hidden_layers: [256, 256, 256, 256, 256, 256]
   dropout: 0.0
 
