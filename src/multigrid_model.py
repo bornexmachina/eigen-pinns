@@ -142,6 +142,7 @@ class MultigridGNN:
             features = self._compute_level_features(
                 X, U_norm, lambdas, edge_index, K_list[i], M_list[i], i, len(K_list)
             )
+            print(f"--- features have shape: {features.shape} ---")
             x_feats_all.append(features)
             edge_index_all.append(edge_index)
         
@@ -191,6 +192,7 @@ class MultigridGNN:
         rayleigh_norm = rayleigh_per_node / (lambdas.max() + 1e-12)
         
         # Concatenate all features
+        # TO-DO: make features "selectable"
         return torch.cat([
             X_t, res_feat, deg_feat, 
             K_diag, M_diag, 
